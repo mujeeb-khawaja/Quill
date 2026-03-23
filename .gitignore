@@ -1,0 +1,29 @@
+# All Python
+backend/venv/
+backend/__pycache__/
+backend/*.log
+backend/err*.log
+*.pyc
+
+# All Node
+node_modules/
+**/node_modules/
+dist/
+.turbo/
+
+# Environment
+.env
+**/ .env
+.DS_Store
+
+# RFP Specific
+test_rfps/
+backend/test_rfps/
+err.log
+err2.log
+err*.log
+*.txt
+!backend/context.txt
+!README.md
+!backend/requirements.txt
+!requirements.txt
