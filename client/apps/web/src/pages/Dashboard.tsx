@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { 
-  UploadCloud, FileText, Search, ShieldAlert, PenTool, 
+import {
+  UploadCloud, FileText, Search, ShieldAlert, PenTool,
   CheckCircle, XCircle, Copy, Loader2, Check, History, LayoutDashboard, Clock, ExternalLink
 } from 'lucide-react';
 
@@ -41,7 +41,7 @@ export default function Dashboard() {
   const [gatekeeperReason, setGatekeeperReason] = useState('');
   const [proposal, setProposal] = useState('');
   const [copied, setCopied] = useState(false);
-  
+
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([
     {
@@ -94,56 +94,36 @@ export default function Dashboard() {
     setHistory(prev => [newItem, ...prev]);
   };
 
-  const runEvaluation = async (mode: 'real' | 'mock-success' | 'mock-fail') => {
+  const runEvaluation = async () => {
     setStatus('processing');
     setActiveStepIndex(0);
     setGatekeeperReason('');
     setProposal('');
 
-    if (mode === 'real') {
-       if (!selectedFile) return;
-       try {
-          const formData = new FormData();
-          formData.append('file', selectedFile);
-          const response = await fetch('http://localhost:8000/api/evaluate-rfp', { method: 'POST', body: formData });
-          const data = await response.json();
-          processResult(data.is_match, data.final_draft, data.gatekeeper_reasoning, selectedFile.name, data.rfp_text || "Original text not captured.");
-       } catch (err) {
-          setStatus('rejected');
-          setGatekeeperReason("Connection Failed. Is the backend running?");
-       }
-    } else {
-       // Mock Visual Loop
-       const isSuccess = mode === 'mock-success';
-       const runStep = (index: number) => {
-         if (index >= STEPS.length) {
-            processResult(true, "Mock proposal generated for your testing of the new UI overhaul...", "Matches requirements perfectly based on CV context.", "Senior Dev Role", "Seeking a senior developer with React and Node.js expertise...");
-            return;
-         }
-         setActiveStepIndex(index);
-         if (!isSuccess && STEPS[index].id === 'gatekeeper') {
-            setTimeout(() => {
-               processResult(false, null, "Match Failed: Candidate lacks the required 5+ years of Python expertise specified in the RFP.", "Job Posting #4521", "Python Engineer needed for high-scale backend services...");
-            }, 2000);
-            return;
-         }
-         setTimeout(() => runStep(index + 1), 2000);
-       };
-       runStep(0);
+    if (!selectedFile) return;
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const response = await fetch('http://localhost:8000/api/evaluate-rfp', { method: 'POST', body: formData });
+      const data = await response.json();
+      processResult(data.is_match, data.final_draft, data.gatekeeper_reasoning, selectedFile.name, data.rfp_text || "Original text not captured.");
+    } catch (err) {
+      setStatus('rejected');
+      setGatekeeperReason("Connection Failed. Is the backend running?");
     }
   };
 
   const processResult = (is_match: boolean, draft: string | null, reasoning: string, title: string, originalText: string) => {
     if (is_match && draft) {
-       setStatus('success');
-       setProposal(draft);
-       setActiveStepIndex(STEPS.length);
-       addToHistory({ title, original_text: originalText, status: 'Drafted', is_match: true, reasoning, final_draft: draft });
+      setStatus('success');
+      setProposal(draft);
+      setActiveStepIndex(STEPS.length);
+      addToHistory({ title, original_text: originalText, status: 'Drafted', is_match: true, reasoning, final_draft: draft });
     } else {
-       setStatus('rejected');
-       setGatekeeperReason(reasoning);
-       setActiveStepIndex(2);
-       addToHistory({ title, original_text: originalText, status: 'Rejected', is_match: false, reasoning, final_draft: null });
+      setStatus('rejected');
+      setGatekeeperReason(reasoning);
+      setActiveStepIndex(2);
+      addToHistory({ title, original_text: originalText, status: 'Rejected', is_match: false, reasoning, final_draft: null });
     }
   };
 
@@ -151,7 +131,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
-      
+
       {/* --- TOP NAVIGATION --- */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-6 flex h-16 items-center justify-between">
@@ -159,10 +139,10 @@ export default function Dashboard() {
             <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
               <ShieldAlert className="h-5 w-5 text-primary-foreground" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight italic">AutoBid <span className="text-primary">AI</span></h1>
+            <h1 className="text-xl font-bold tracking-tight">Quill</h1>
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-[400px]">
-            <TabsList className="bg-muted/50 border border-border p-1 gap-1">
+            <TabsList className="bg-muted/50 border border-border gap-1">
               <TabsTrigger value="dashboard" className="flex-1 gap-2 items-center">
                 <LayoutDashboard className="h-4 w-4" /> Dashboard
               </TabsTrigger>
@@ -178,20 +158,30 @@ export default function Dashboard() {
       </header>
 
       <main className="container mx-auto px-6 py-10">
-        
+
         {/* --- VIEW 1: DASHBOARD --- */}
         {activeTab === 'dashboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-            
+          <div className="flex w-full items-start overflow-hidden">
+
+            {/* SMOOTH CENTERING SPACER */}
+            <div
+              className="transition-[width] duration-700 ease-in-out flex-shrink-0 hidden lg:block"
+              style={{ width: status === 'idle' ? 'calc(50% - 224px)' : '0px' }}
+            />
+
             {/* INPUT SIDEBAR */}
-            <div className="lg:col-span-4 space-y-6">
+            <div
+              className={`transition-all duration-700 ease-in-out flex-shrink-0 space-y-6 z-10 w-full
+                ${status === 'idle' ? 'max-w-md' : 'max-w-sm'}
+              `}
+            >
               <Card className="bg-card border-border shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-xl">Upload RFP</CardTitle>
                   <CardDescription className="text-muted-foreground pt-1">Provide a PDF job description to begin.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div 
+                  <div
                     onClick={triggerUpload}
                     className="group border-2 border-dashed border-border rounded-2xl p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
                   >
@@ -206,25 +196,27 @@ export default function Dashboard() {
                   </div>
 
                   <div className="flex flex-col gap-3 pt-2">
-                    <Button 
-                      onClick={() => runEvaluation('real')} 
+                    <Button
+                      onClick={() => runEvaluation()}
                       disabled={!selectedFile || status === 'processing'}
                       className="bg-primary text-primary-foreground font-bold h-12 shadow-sm"
                     >
-                      {status === 'processing' ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "🚀 Analyze Live RFP"}
+                      {status === 'processing' ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Analyzing...</> : "Analyze RFP"}
                     </Button>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant="secondary" onClick={() => runEvaluation('mock-success')} className="text-xs h-10 border border-border">Mock Pass</Button>
-                      <Button variant="secondary" onClick={() => runEvaluation('mock-fail')} className="text-xs h-10 border border-border text-destructive">Mock Fail</Button>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
             {/* MAIN STAGE (THE BRAIN) */}
-            <div className="lg:col-span-8 flex flex-col gap-8">
-              
+            <div
+              className={`transition-all duration-700 ease-in-out flex flex-col gap-8 flex-1
+                ${status === 'idle'
+                  ? 'max-w-0 opacity-0 ml-0 pointer-events-none'
+                  : 'max-w-5xl opacity-100 lg:ml-8'
+                }
+              `}
+            >
               <div className="flex items-center justify-between px-2">
                 <h2 className="text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
                 <div className="flex gap-2">
@@ -234,77 +226,67 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {status === 'idle' ? (
-                <div className="flex-grow border border-dashed border-border rounded-3xl flex flex-col items-center justify-center text-center p-20 bg-muted/5">
-                  <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center mb-6">
-                    <LayoutDashboard className="h-8 w-8 text-muted-foreground opacity-50" />
-                  </div>
-                  <h3 className="text-lg font-bold">Waiting for Input...</h3>
-                  <p className="text-sm text-muted-foreground mt-2 max-w-xs">Start by uploading a recruitment document on the left sidebar.</p>
-                </div>
-              ) : (
-                <div className="space-y-12">
-                  
-                  {/* STEPPER */}
-                  <div className="relative border-l border-border ml-6 space-y-10 py-2">
-                    {STEPS.map((step, index) => {
-                      const Icon = step.icon;
-                      const isPast = activeStepIndex > index || status === 'success' || (status === 'rejected' && activeStepIndex > index);
-                      const isCurrent = activeStepIndex === index && status === 'processing';
-                      const isFailed = status === 'rejected' && activeStepIndex === index;
+              <div className="space-y-12 animate-in fade-in slide-in-from-right-5 duration-500">
 
-                      return (
-                        <div key={step.id} className="relative pl-10">
-                          <span className={`absolute -left-[17px] p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
-                            ${isPast ? 'border-emerald-500 text-emerald-500' : 
-                              isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-125' : 
+                {/* STEPPER */}
+                <div className="relative border-l border-border ml-6 space-y-10 py-2">
+                  {STEPS.map((step, index) => {
+                    const Icon = step.icon;
+                    const isPast = activeStepIndex > index || status === 'success' || (status === 'rejected' && activeStepIndex > index);
+                    const isCurrent = activeStepIndex === index && status === 'processing';
+                    const isFailed = status === 'rejected' && activeStepIndex === index;
+
+                    return (
+                      <div key={step.id} className="relative pl-10">
+                        <span className={`absolute -left-[17px] p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
+                          ${isPast ? 'border-emerald-500 text-emerald-500' :
+                            isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-125' :
                               isFailed ? 'border-destructive text-destructive' : 'border-border text-muted-foreground opacity-50'}
-                          `}>
-                            {isCurrent ? <Loader2 className="h-4 w-4 animate-spin" /> : isPast ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                        `}>
+                          {isCurrent ? <Loader2 className="h-4 w-4 animate-spin" /> : isPast ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                        </span>
+                        <div className="flex flex-col">
+                          <span className={`text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
+                            Node: {step.label}
                           </span>
-                          <div className="flex flex-col">
-                            <span className={`text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
-                              Node: {step.label}
-                            </span>
-                            <span className={`text-sm mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
-                              {isCurrent ? 'Agent executing decision logic...' : isPast ? 'Task verified.' : isFailed ? 'Workflow Terminated.' : 'Pending activation...'}
-                            </span>
-                          </div>
+                          <span className={`text-sm mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                            {isCurrent ? 'Agent executing decision logic...' : isPast ? 'Task verified.' : isFailed ? 'Workflow Terminated.' : 'Pending activation...'}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* RESULTS */}
-                  {status === 'rejected' && (
-                    <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-8 px-8 rounded-2xl animate-in zoom-in-95">
-                      <XCircle className="h-5 w-5" />
-                      <AlertTitle className="font-bold mb-2">Gatekeeper Veto</AlertTitle>
-                      <AlertDescription className="italic opacity-90">
-                        "{gatekeeperReason}"
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {status === 'success' && (
-                    <Card className="bg-card border-border rounded-2xl overflow-hidden shadow-sm">
-                      <div className="bg-muted/50 px-6 py-4 flex justify-between items-center border-b border-border">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle className="h-4 w-4 text-emerald-500" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Generated Response</span>
-                        </div>
-                        <Button variant="ghost" size="sm" onClick={() => handleCopy(proposal)} className="h-8 gap-2 text-xs">
-                          {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                          {copied ? "Copied" : "Copy Draft"}
-                        </Button>
                       </div>
-                      <div className="p-8 text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
-                        {proposal}
-                      </div>
-                    </Card>
-                  )}
+                    );
+                  })}
                 </div>
-              )}
+
+                {/* RESULTS */}
+                {status === 'rejected' && (
+                  <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-8 px-8 rounded-2xl animate-in zoom-in-95">
+                    <XCircle className="h-5 w-5" />
+                    <AlertTitle className="font-bold mb-2">Gatekeeper Veto</AlertTitle>
+                    <AlertDescription className="italic opacity-90">
+                      "{gatekeeperReason}"
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {status === 'success' && (
+                  <Card className="bg-card border-border rounded-2xl overflow-hidden shadow-sm animate-in zoom-in-95 duration-500">
+                    <div className="bg-muted/50 px-6 py-4 flex justify-between items-center border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-emerald-500" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Generated Response</span>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => handleCopy(proposal)} className="h-8 gap-2 text-xs">
+                        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copied ? "Copied" : "Copy Draft"}
+                      </Button>
+                    </div>
+                    <div className="p-8 text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
+                      {proposal}
+                    </div>
+                  </Card>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -312,34 +294,34 @@ export default function Dashboard() {
         {/* --- VIEW 2: HISTORY --- */}
         {activeTab === 'history' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 min-h-[600px]">
-            
+
             {/* LIST */}
             <div className="lg:col-span-4 lg:border-r border-border lg:pr-6 space-y-4">
-               <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground px-2">Session Log</h3>
-               <ScrollArea className="h-[700px] w-full">
-                  <div className="space-y-3 px-2">
-                    {history.map(item => (
-                      <div 
-                        key={item.id}
-                        onClick={() => setSelectedHistoryId(item.id)}
-                        className={`group p-4 rounded-xl border transition-all cursor-pointer hover:bg-muted/50
+              <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground px-2">Session Log</h3>
+              <ScrollArea className="h-[700px] w-full">
+                <div className="space-y-3 px-2">
+                  {history.map(item => (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedHistoryId(item.id)}
+                      className={`group p-4 rounded-xl border transition-all cursor-pointer hover:bg-muted/50
                           ${selectedHistoryId === item.id ? 'bg-muted border-primary/50' : 'bg-card border-border'}
                           ${item.status === 'Drafted' ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-destructive'}
                         `}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                            <Clock className="h-3 w-3" /> {item.timestamp}
-                          </span>
-                          <Badge variant="outline" className={`${item.status === 'Drafted' ? 'text-emerald-500 border-emerald-500/20' : 'text-destructive border-destructive/20'} text-[9px]`}>
-                            {item.status}
-                          </Badge>
-                        </div>
-                        <h4 className="font-bold text-sm truncate">{item.title}</h4>
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> {item.timestamp}
+                        </span>
+                        <Badge variant="outline" className={`${item.status === 'Drafted' ? 'text-emerald-500 border-emerald-500/20' : 'text-destructive border-destructive/20'} text-[9px]`}>
+                          {item.status}
+                        </Badge>
                       </div>
-                    ))}
-                  </div>
-               </ScrollArea>
+                      <h4 className="font-bold text-sm truncate">{item.title}</h4>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             </div>
 
             {/* DETAIL */}
@@ -347,46 +329,46 @@ export default function Dashboard() {
               {selectedHistory ? (
                 <Card className="bg-card border-border shadow-sm overflow-hidden h-fit">
                   <CardHeader className="border-b border-border bg-muted/5 pb-8">
-                      <div className="flex justify-between items-start">
-                        <div>
-                           <CardTitle className="text-2xl font-bold tracking-tight">{selectedHistory.title}</CardTitle>
-                           <CardDescription className="mt-1 flex items-center gap-2">
-                             <Clock className="h-3 w-3" /> {selectedHistory.timestamp}
-                           </CardDescription>
-                        </div>
-                        <Button variant="outline" size="sm" className="gap-2" onClick={() => setActiveTab('dashboard')}>
-                           Repeat Evaluation <ExternalLink className="h-3 w-3" />
-                        </Button>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-2xl font-bold tracking-tight">{selectedHistory.title}</CardTitle>
+                        <CardDescription className="mt-1 flex items-center gap-2">
+                          <Clock className="h-3 w-3" /> {selectedHistory.timestamp}
+                        </CardDescription>
                       </div>
+                      <Button variant="outline" size="sm" className="gap-2" onClick={() => setActiveTab('dashboard')}>
+                        Repeat Evaluation <ExternalLink className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </CardHeader>
-                  
+
                   <Tabs defaultValue="output" className="w-full">
                     <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-border p-1 gap-2">
                       <TabsTrigger value="output" className="flex-1">AI Verdict</TabsTrigger>
                       <TabsTrigger value="input" className="flex-1">Source RFP</TabsTrigger>
                     </TabsList>
-                    
+
                     <TabsContent value="output" className="p-8">
                       {selectedHistory.is_match ? (
                         <div className="space-y-6">
-                           <div className="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
-                              <p className="text-xs uppercase font-bold text-emerald-500 tracking-widest mb-2">Gatekeeper Summary</p>
-                              <p className="text-sm italic opacity-90">{selectedHistory.reasoning}</p>
-                           </div>
-                           <Separator />
-                           <div className="flex justify-between items-center">
-                              <h5 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Proposal Draft</h5>
-                              <Button variant="secondary" size="sm" onClick={() => handleCopy(selectedHistory.final_draft || '')}>
-                                Copy Text
-                              </Button>
-                           </div>
-                           <div className="text-sm leading-relaxed whitespace-pre-wrap p-2">{selectedHistory.final_draft}</div>
+                          <div className="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                            <p className="text-xs uppercase font-bold text-emerald-500 tracking-widest mb-2">Gatekeeper Summary</p>
+                            <p className="text-sm italic opacity-90">{selectedHistory.reasoning}</p>
+                          </div>
+                          <Separator />
+                          <div className="flex justify-between items-center">
+                            <h5 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Proposal Draft</h5>
+                            <Button variant="secondary" size="sm" onClick={() => handleCopy(selectedHistory.final_draft || '')}>
+                              Copy Text
+                            </Button>
+                          </div>
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap p-2">{selectedHistory.final_draft}</div>
                         </div>
                       ) : (
                         <div className="p-10 text-center animate-in zoom-in-95">
-                           <XCircle className="h-16 w-16 text-destructive/30 mx-auto mb-4" />
-                           <h4 className="text-lg font-bold">Proposal Rejected</h4>
-                           <p className="text-sm text-muted-foreground mt-2 italic px-8">"{selectedHistory.reasoning}"</p>
+                          <XCircle className="h-16 w-16 text-destructive/30 mx-auto mb-4" />
+                          <h4 className="text-lg font-bold">Proposal Rejected</h4>
+                          <p className="text-sm text-muted-foreground mt-2 italic px-8">"{selectedHistory.reasoning}"</p>
                         </div>
                       )}
                     </TabsContent>

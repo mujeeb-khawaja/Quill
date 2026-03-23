@@ -23,7 +23,7 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
   {
     variants: {
       variant: {
@@ -63,7 +63,7 @@ function TabsTrigger({
       className={cn(
         "relative inline-flex items-center justify-center gap-2 rounded-md border border-transparent px-4 py-1.5 text-xs font-bold uppercase tracking-widest whitespace-nowrap text-muted-foreground transition-all",
         "hover:text-foreground",
-        "data-active:bg-muted/50 data-active:text-foreground data-active:border-border data-active:shadow-sm",
+        "data-active:bg-muted/50 data-active:text-foreground",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}
