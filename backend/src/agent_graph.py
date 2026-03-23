@@ -59,7 +59,7 @@ def get_llm():
         temperature=0.2
     )
     
-    fallback_llm = groq_llm.with_fallbacks([gemini_llm, openrouter_llm])
+    fallback_llm = gemini_llm.with_fallbacks([groq_llm, openrouter_llm])
     return fallback_llm
 
 llm = get_llm()
