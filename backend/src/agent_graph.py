@@ -196,7 +196,12 @@ def drafter_node(state: AgentState):
         feedback_prompt = f"\nPrevious Reviewer Feedback to address: {review_feedback}"
     
     prompt = f"""
-    You are an expert software proposal writer. Draft a professional, personalized response to the client's RFP.
+    You are an expert software proposal writer. Draft a professional, personalized 
+    response to the client's RFP.
+
+    WARNING: You are strictly forbidden from claiming any skill, software, or experience that is 
+    not explicitly written in the provided CV Context. If the RFP asks for a skill you do not have, 
+    ignore it or pivot to a related skill you DO have. Do not hallucinate.
     
     CLIENT REQUIREMENTS:
     {state['requirements']}
