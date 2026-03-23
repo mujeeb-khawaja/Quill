@@ -135,9 +135,9 @@ export default function Dashboard() {
       {/* --- TOP NAVIGATION --- */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-6 flex h-16 items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
-              <ShieldAlert className="h-5 w-5 text-primary-foreground" />
+          <div className="flex items-center gap-1">
+            <div className="h-10 w-10 flex items-center justify-center">
+              <img src="/logo_cleaned.png" alt="Quill Logo" className="h-full w-full object-contain" />
             </div>
             <h1 className="text-xl font-bold tracking-tight">Quill</h1>
           </div>
@@ -161,7 +161,7 @@ export default function Dashboard() {
 
         {/* --- VIEW 1: DASHBOARD --- */}
         {activeTab === 'dashboard' && (
-          <div className="flex w-full items-start overflow-hidden">
+          <div className={`flex w-full overflow-hidden transition-all duration-700 ${status === 'idle' ? 'items-center min-h-[60vh]' : 'items-start'}`}>
 
             {/* SMOOTH CENTERING SPACER */}
             <div
