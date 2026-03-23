@@ -35,9 +35,12 @@ def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
         print(f"Error reading PDF bytes: {e}")
     return text
 
+import json
+from fastapi.responses import StreamingResponse
+
 @app.post("/api/evaluate-rfp")
 async def evaluate_rfp(file: UploadFile = File(...)):
-    print(f"\n--- API REQUEST RECEIVED ---")
+    print(f"\n--- API REQUEST RECEIVED (STREAMING) ---")
     print(f"File Name: {file.filename}")
     
     # 1. Read file bytes
@@ -47,7 +50,6 @@ async def evaluate_rfp(file: UploadFile = File(...)):
     rfp_text = extract_text_from_pdf_bytes(file_bytes)
     
     if len(rfp_text.strip()) < 10:
-        print("Error: Not enough readable text extracted.")
         return {
             "status": "error",
             "is_match": False,
@@ -67,28 +69,28 @@ async def evaluate_rfp(file: UploadFile = File(...)):
         "revision_count": 0
     }
     
-    print("\nInvoking Agentic Workflow...")
-    # 4. Invoke LangGraph (Synchronous run for API simplicity)
-    final_state = graph.invoke(initial_state)
-    
-    # 5. Build Final Payload for React UI
-    is_match = final_state.get("is_match", False)
-    reasoning = final_state.get("evaluator_reasoning", "")
-    
-    if is_match and final_state.get("review_feedback") == "PASS":
-        draft = final_state.get("current_draft", "")
-    else:
-        draft = None
+    async def event_generator():
+        # First event: Send the extracted RFP text so UI can show it
+        yield json.dumps({"event": "init", "rfp_text": rfp_text}) + "\n"
         
-    print(f"--- API REQUEST FINISHED: {'MATCH' if is_match else 'REJECTED'} ---")
+        try:
+            # langgraph.astream yields events as a dictionary: {node_name: state_updates}
+            async for event in graph.astream(initial_state):
+                for node_name, updates in event.items():
+                    # We send the node name and the specific updates it made
+                    payload = {
+                        "event": "node_update",
+                        "node": node_name,
+                        "updates": updates
+                    }
+                    yield json.dumps(payload) + "\n"
+                    
+            yield json.dumps({"event": "done"}) + "\n"
+        except Exception as e:
+            print(f"Streaming Error: {e}")
+            yield json.dumps({"event": "error", "message": str(e)}) + "\n"
 
-    return {
-        "status": "success",
-        "rfp_text": rfp_text,
-        "is_match": is_match,
-        "gatekeeper_reasoning": reasoning,
-        "final_draft": draft
-    }
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 # --- AWS LAMBDA ADAPTER ---
 # This single line converts the FastAPI application into a form 

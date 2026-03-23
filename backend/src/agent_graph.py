@@ -64,7 +64,7 @@ def get_llm():
 
 llm = get_llm()
 
-def get_retriever():
+def _init_retriever():
     print("      [SYSTEM] Initializing Qdrant Retriever and Embedding Model...")
     embeddings = HuggingFaceEmbeddings(
         model_name="BAAI/bge-small-en-v1.5",
@@ -78,6 +78,15 @@ def get_retriever():
         collection_name="cv_portfolio"
     )
     return qdrant.as_retriever(search_kwargs={"k": 3})
+
+# Initialize globally so it's not reloaded on every request
+global_retriever = None
+
+def get_retriever():
+    global global_retriever
+    if global_retriever is None:
+        global_retriever = _init_retriever()
+    return global_retriever
 
 # --- NODE 1: EXTRACTOR ---
 def extractor_node(state: AgentState):

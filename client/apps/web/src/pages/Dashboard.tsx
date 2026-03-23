@@ -100,35 +100,117 @@ export default function Dashboard() {
   };
 
   const runEvaluation = async () => {
+    if (!selectedFile) return;
+
+    // Reset UI for fresh run
     setStatus('processing');
-    setActiveStepIndex(0);
+    setActiveStepIndex(0); // Show first step as active
     setGatekeeperReason('');
     setProposal('');
+    
+    // We'll track these to update history at the very end
+    let finalIsMatch = false;
+    let finalDraft = '';
+    let finalReasoning = '';
+    let extractedRfpText = '';
 
-    if (!selectedFile) return;
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
-      const response = await fetch('http://localhost:8000/api/evaluate-rfp', { method: 'POST', body: formData });
-      const data = await response.json();
-      processResult(data.is_match, data.final_draft, data.gatekeeper_reasoning, selectedFile.name, data.rfp_text || "Original text not captured.");
-    } catch (err) {
-      setStatus('rejected');
-      setGatekeeperReason("Connection Failed. Is the backend running?");
-    }
-  };
 
-  const processResult = (is_match: boolean, draft: string | null, reasoning: string, title: string, originalText: string) => {
-    if (is_match && draft) {
-      setStatus('success');
-      setProposal(draft);
-      setActiveStepIndex(STEPS.length);
-      addToHistory({ title, original_text: originalText, status: 'Drafted', is_match: true, reasoning, final_draft: draft });
-    } else {
+      const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.body) throw new Error("No response body");
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // MAPPING: node_name -> activeStepIndex for the NEXT step
+      const nodeToStepMap: Record<string, number> = {
+        'extractor': 1,
+        'researcher': 2,
+        'evaluator': 3,
+        'drafter': 4,
+        'reviewer': 5
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep the last partial line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            console.log("Stream Event:", data);
+
+            if (data.event === 'init') {
+              extractedRfpText = data.rfp_text;
+            } 
+            else if (data.event === 'node_update') {
+              const { node, updates } = data;
+              
+              // Move the progress indicator
+              if (nodeToStepMap[node] !== undefined) {
+                setActiveStepIndex(nodeToStepMap[node]);
+              }
+
+              // Specific Node handling
+              if (node === 'evaluator') {
+                if (updates.is_match === false) {
+                  finalIsMatch = false;
+                  finalReasoning = updates.evaluator_reasoning;
+                  setStatus('rejected');
+                  setGatekeeperReason(updates.evaluator_reasoning);
+                } else {
+                  finalIsMatch = true;
+                  finalReasoning = updates.evaluator_reasoning;
+                }
+              }
+              
+              if (node === 'drafter') {
+                setProposal(updates.current_draft);
+                finalDraft = updates.current_draft;
+              }
+
+              if (node === 'reviewer') {
+                if (updates.review_feedback === 'PASS') {
+                  setStatus('success');
+                } else if (status !== 'rejected') {
+                  // If reviewer fails and we aren't already rejected, stay in processing 
+                  // or show feedback if we hit max revisions
+                }
+              }
+            }
+            else if (data.event === 'done') {
+              // Final check if we completed successfully
+              // addToHistory after streaming is fully complete
+              addToHistory({ 
+                title: selectedFile.name, 
+                original_text: extractedRfpText, 
+                status: finalIsMatch && finalDraft ? 'Drafted' : 'Rejected', 
+                is_match: finalIsMatch, 
+                reasoning: finalReasoning, 
+                final_draft: finalDraft || null 
+              });
+            }
+          } catch (e) {
+            console.error("Error parsing stream line:", e);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Evaluation error:", err);
       setStatus('rejected');
-      setGatekeeperReason(reasoning);
-      setActiveStepIndex(2);
-      addToHistory({ title, original_text: originalText, status: 'Rejected', is_match: false, reasoning, final_draft: null });
+      setGatekeeperReason("Connection Failed or streaming interrupted.");
     }
   };
 
@@ -144,7 +226,11 @@ export default function Dashboard() {
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-1">
               <div className="h-8 w-8 md:h-10 md:w-10 flex items-center justify-center">
-                <img src="/logo_cleaned.png" alt="Quill Logo" className="h-full w-full object-contain" />
+                <img
+                  src={theme === 'dark' ? "/logo_cleaned.png" : "/light_theme_logo.png"}
+                  alt="Quill Logo"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <h1 className="text-lg md:text-xl font-bold tracking-tight">Quill</h1>
             </div>

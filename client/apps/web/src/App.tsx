@@ -1,7 +1,10 @@
 import Dashboard from "./pages/Dashboard";
+import { AppLoader } from "./components/AppLoader";
 
 export function App() {
   return (
-    <Dashboard />
-  )
+    <AppLoader>
+      <Dashboard />
+    </AppLoader>
+  );
 }
