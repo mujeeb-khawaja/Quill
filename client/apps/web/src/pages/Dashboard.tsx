@@ -1,8 +1,11 @@
 import React, { useState, useRef } from 'react';
 import {
   UploadCloud, FileText, Search, ShieldAlert, PenTool,
-  CheckCircle, XCircle, Copy, Loader2, Check, History, LayoutDashboard, Clock, ExternalLink
+  CheckCircle, XCircle, Copy, Loader2, Check, History, LayoutDashboard, Clock, ExternalLink,
+  Sun, Moon
 } from 'lucide-react';
+
+import { useTheme } from "@/components/theme-provider";
 
 // shadcn / workspace imports
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card";
@@ -41,6 +44,7 @@ export default function Dashboard() {
   const [gatekeeperReason, setGatekeeperReason] = useState('');
   const [proposal, setProposal] = useState('');
   const [copied, setCopied] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([
@@ -151,8 +155,18 @@ export default function Dashboard() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-4">
             <Badge variant="outline" className="text-muted-foreground border-border font-medium">v1.2.0-Alpha</Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="h-9 w-9 border border-border bg-muted/20"
+            >
+              <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              <span className="sr-only">Toggle theme</span>
+            </Button>
           </div>
         </div>
       </header>
