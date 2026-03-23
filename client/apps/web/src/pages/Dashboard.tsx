@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   UploadCloud, FileText, Search, ShieldAlert, PenTool,
   CheckCircle, XCircle, Copy, Loader2, Check, History, LayoutDashboard, Clock, ExternalLink,
-  Sun, Moon
+  Sun, Moon, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 import { useTheme } from "@/components/theme-provider";
@@ -44,6 +44,7 @@ export default function Dashboard() {
   const [gatekeeperReason, setGatekeeperReason] = useState('');
   const [proposal, setProposal] = useState('');
   const [copied, setCopied] = useState(false);
+  const [isLogsExpanded, setIsLogsExpanded] = useState(true);
   const { theme, setTheme } = useTheme();
 
   // History State
@@ -138,35 +139,57 @@ export default function Dashboard() {
 
       {/* --- TOP NAVIGATION --- */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-6 flex h-16 items-center justify-between">
-          <div className="flex items-center gap-1">
-            <div className="h-10 w-10 flex items-center justify-center">
-              <img src="/logo_cleaned.png" alt="Quill Logo" className="h-full w-full object-contain" />
+        <div className="container mx-auto px-4 md:px-6">
+          {/* Main Row: Logo and Actions */}
+          <div className="flex h-16 items-center justify-between">
+            <div className="flex items-center gap-1">
+              <div className="h-8 w-8 md:h-10 md:w-10 flex items-center justify-center">
+                <img src="/logo_cleaned.png" alt="Quill Logo" className="h-full w-full object-contain" />
+              </div>
+              <h1 className="text-lg md:text-xl font-bold tracking-tight">Quill</h1>
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Quill</h1>
+
+            {/* Desktop Center Tabs */}
+            <div className="hidden md:block">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-[300px] lg:w-[400px]">
+                <TabsList className="bg-muted/50 border border-border gap-1">
+                  <TabsTrigger value="dashboard" className="flex-1 gap-2 items-center">
+                    <LayoutDashboard className="h-4 w-4" /> Dashboard
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="flex-1 gap-2 items-center">
+                    <History className="h-4 w-4" /> History
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
+            <div className="flex items-center gap-2 md:gap-4">
+              <Badge variant="outline" className="hidden sm:inline-flex text-[10px] md:text-xs text-muted-foreground border-border font-medium px-2 py-0">v1.2.0-Alpha</Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="h-8 w-8 md:h-9 md:w-9 border border-border bg-muted/20"
+              >
+                <Sun className="h-4 w-4 md:h-[1.2rem] md:w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                <Moon className="absolute h-4 w-4 md:h-[1.2rem] md:w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                <span className="sr-only">Toggle theme</span>
+              </Button>
+            </div>
           </div>
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-[400px]">
-            <TabsList className="bg-muted/50 border border-border gap-1">
-              <TabsTrigger value="dashboard" className="flex-1 gap-2 items-center">
-                <LayoutDashboard className="h-4 w-4" /> Dashboard
-              </TabsTrigger>
-              <TabsTrigger value="history" className="flex-1 gap-2 items-center">
-                <History className="h-4 w-4" /> History
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <div className="hidden md:flex items-center gap-4">
-            <Badge variant="outline" className="text-muted-foreground border-border font-medium">v1.2.0-Alpha</Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="h-9 w-9 border border-border bg-muted/20"
-            >
-              <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Toggle theme</span>
-            </Button>
+
+          {/* Mobile Tab Row */}
+          <div className="md:hidden pb-3">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="w-full bg-muted/50 border border-border grid grid-cols-2 h-10">
+                <TabsTrigger value="dashboard" className="gap-2 items-center text-[10px] font-bold">
+                  <LayoutDashboard className="h-3 w-3" /> Dashboard
+                </TabsTrigger>
+                <TabsTrigger value="history" className="gap-2 items-center text-[10px] font-bold">
+                  <History className="h-3 w-3" /> History
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
         </div>
       </header>
@@ -175,9 +198,9 @@ export default function Dashboard() {
 
         {/* --- VIEW 1: DASHBOARD --- */}
         {activeTab === 'dashboard' && (
-          <div className={`flex w-full overflow-hidden transition-all duration-700 ${status === 'idle' ? 'items-center min-h-[60vh]' : 'items-start'}`}>
+          <div className={`flex flex-col lg:flex-row w-full overflow-hidden transition-all duration-700 ${status === 'idle' ? 'lg:items-center min-h-[60vh]' : 'items-start'}`}>
 
-            {/* SMOOTH CENTERING SPACER */}
+            {/* SMOOTH CENTERING SPACER (Desktop only) */}
             <div
               className="transition-[width] duration-700 ease-in-out flex-shrink-0 hidden lg:block"
               style={{ width: status === 'idle' ? 'calc(50% - 224px)' : '0px' }}
@@ -185,26 +208,26 @@ export default function Dashboard() {
 
             {/* INPUT SIDEBAR */}
             <div
-              className={`transition-all duration-700 ease-in-out flex-shrink-0 space-y-6 z-10 w-full
-                ${status === 'idle' ? 'max-w-md' : 'max-w-sm'}
+              className={`transition-all duration-700 ease-in-out flex-shrink-0 space-y-6 z-10 w-full mb-8 lg:mb-0
+                ${status === 'idle' ? 'max-w-md mx-auto lg:mx-0' : 'max-w-full lg:max-w-sm'}
               `}
             >
               <Card className="bg-card border-border shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-xl">Upload RFP</CardTitle>
-                  <CardDescription className="text-muted-foreground pt-1">Provide a PDF job description to begin.</CardDescription>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg md:text-xl">Upload RFP</CardTitle>
+                  <CardDescription className="text-xs md:text-sm text-muted-foreground pt-1">Provide a PDF job description to begin.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div
                     onClick={triggerUpload}
-                    className="group border-2 border-dashed border-border rounded-2xl p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
+                    className="group border-2 border-dashed border-border rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
                   >
-                    <UploadCloud className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <UploadCloud className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
                     <div className="text-center">
-                      <p className="text-sm font-bold text-foreground">
+                      <p className="text-xs md:text-sm font-bold text-foreground">
                         {selectedFile ? selectedFile.name : "Choose PDF File"}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">Maximum size: 50MB</p>
+                      <p className="text-[10px] md:text-xs text-muted-foreground mt-1">Maximum size: 50MB</p>
                     </div>
                     <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" />
                   </div>
@@ -213,7 +236,7 @@ export default function Dashboard() {
                     <Button
                       onClick={() => runEvaluation()}
                       disabled={!selectedFile || status === 'processing'}
-                      className="bg-primary text-primary-foreground font-bold h-12 shadow-sm"
+                      className="bg-primary text-primary-foreground font-bold h-10 md:h-12 shadow-sm text-sm"
                     >
                       {status === 'processing' ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Analyzing...</> : "Analyze RFP"}
                     </Button>
@@ -224,26 +247,31 @@ export default function Dashboard() {
 
             {/* MAIN STAGE (THE BRAIN) */}
             <div
-              className={`transition-all duration-700 ease-in-out flex flex-col gap-8 flex-1
+              className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full
                 ${status === 'idle'
-                  ? 'max-w-0 opacity-0 ml-0 pointer-events-none'
-                  : 'max-w-5xl opacity-100 lg:ml-8'
+                  ? 'max-h-0 lg:max-h-none lg:max-w-0 opacity-0 ml-0 pointer-events-none'
+                  : 'max-h-[5000px] lg:max-h-none lg:max-w-5xl opacity-100 lg:ml-8 pb-10'
                 }
               `}
             >
-              <div className="flex items-center justify-between px-2">
-                <h2 className="text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
+              <div className="flex items-center justify-between px-2 cursor-pointer lg:cursor-default" onClick={() => window.innerWidth < 1024 && setIsLogsExpanded(!isLogsExpanded)}>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-[10px] md:text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
+                  <div className="lg:hidden text-muted-foreground">
+                    {isLogsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </div>
+                </div>
                 <div className="flex gap-2">
-                  {status === 'processing' && <Badge variant="outline" className="border-primary/50 text-primary animate-pulse">Running Pipeline</Badge>}
-                  {status === 'success' && <Badge variant="outline" className="border-emerald-500/50 text-emerald-500">Processing Success</Badge>}
-                  {status === 'rejected' && <Badge variant="outline" className="border-destructive/50 text-destructive">Process Halted</Badge>}
+                  {status === 'processing' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-primary/50 text-primary animate-pulse">Running</Badge>}
+                  {status === 'success' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-emerald-500/50 text-emerald-500">Success</Badge>}
+                  {status === 'rejected' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-destructive/50 text-destructive">Halted</Badge>}
                 </div>
               </div>
 
-              <div className="space-y-12 animate-in fade-in slide-in-from-right-5 duration-500">
+              <div className={`space-y-8 md:space-y-12 animate-in fade-in slide-in-from-right-5 duration-500 transition-all ${!isLogsExpanded && 'hidden lg:block'}`}>
 
                 {/* STEPPER */}
-                <div className="relative border-l border-border ml-6 space-y-10 py-2">
+                <div className="relative border-l border-border ml-4 md:ml-6 space-y-8 md:space-y-10 py-2">
                   {STEPS.map((step, index) => {
                     const Icon = step.icon;
                     const isPast = activeStepIndex > index || status === 'success' || (status === 'rejected' && activeStepIndex > index);
@@ -251,19 +279,19 @@ export default function Dashboard() {
                     const isFailed = status === 'rejected' && activeStepIndex === index;
 
                     return (
-                      <div key={step.id} className="relative pl-10">
-                        <span className={`absolute -left-[17px] p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
+                      <div key={step.id} className="relative pl-8 md:pl-10">
+                        <span className={`absolute -left-[17px] p-1.5 md:p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
                           ${isPast ? 'border-emerald-500 text-emerald-500' :
-                            isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-125' :
+                            isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-110 md:scale-125' :
                               isFailed ? 'border-destructive text-destructive' : 'border-border text-muted-foreground opacity-50'}
                         `}>
-                          {isCurrent ? <Loader2 className="h-4 w-4 animate-spin" /> : isPast ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                          {isCurrent ? <Loader2 className="h-3 w-3 md:h-4 md:w-4 animate-spin" /> : isPast ? <CheckCircle className="h-3 w-3 md:h-4 md:w-4" /> : <Icon className="h-3 w-3 md:h-4 md:w-4" />}
                         </span>
                         <div className="flex flex-col">
-                          <span className={`text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
+                          <span className={`text-[9px] md:text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
                             Node: {step.label}
                           </span>
-                          <span className={`text-sm mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                          <span className={`text-[12px] md:text-sm mt-0.5 md:mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
                             {isCurrent ? 'Agent executing decision logic...' : isPast ? 'Task verified.' : isFailed ? 'Workflow Terminated.' : 'Pending activation...'}
                           </span>
                         </div>
@@ -274,28 +302,28 @@ export default function Dashboard() {
 
                 {/* RESULTS */}
                 {status === 'rejected' && (
-                  <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-8 px-8 rounded-2xl animate-in zoom-in-95">
-                    <XCircle className="h-5 w-5" />
-                    <AlertTitle className="font-bold mb-2">Gatekeeper Veto</AlertTitle>
-                    <AlertDescription className="italic opacity-90">
+                  <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-4 md:py-8 px-4 md:px-8 rounded-xl md:rounded-2xl animate-in zoom-in-95">
+                    <XCircle className="h-4 w-4 md:h-5 md:w-5" />
+                    <AlertTitle className="text-xs md:text-sm font-bold mb-2 uppercase tracking-widest">Gatekeeper Veto</AlertTitle>
+                    <AlertDescription className="text-[11px] md:text-sm italic opacity-90 leading-relaxed">
                       "{gatekeeperReason}"
                     </AlertDescription>
                   </Alert>
                 )}
 
                 {status === 'success' && (
-                  <Card className="bg-card border-border rounded-2xl overflow-hidden shadow-sm animate-in zoom-in-95 duration-500">
-                    <div className="bg-muted/50 px-6 py-4 flex justify-between items-center border-b border-border">
+                  <Card className="bg-card border-border rounded-xl md:rounded-2xl overflow-hidden shadow-sm animate-in zoom-in-95 duration-500">
+                    <div className="bg-muted/50 px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-border">
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-4 w-4 text-emerald-500" />
                         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Generated Response</span>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => handleCopy(proposal)} className="h-8 gap-2 text-xs">
+                      <Button variant="ghost" size="sm" onClick={() => handleCopy(proposal)} className="h-8 gap-2 text-xs w-full md:w-auto justify-start md:justify-center">
                         {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
                         {copied ? "Copied" : "Copy Draft"}
                       </Button>
                     </div>
-                    <div className="p-8 text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
+                    <div className="p-4 md:p-8 text-[11px] md:text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
                       {proposal}
                     </div>
                   </Card>
@@ -342,15 +370,15 @@ export default function Dashboard() {
             <div className="lg:col-span-8">
               {selectedHistory ? (
                 <Card className="bg-card border-border shadow-sm overflow-hidden h-fit">
-                  <CardHeader className="border-b border-border bg-muted/5 pb-8">
-                    <div className="flex justify-between items-start">
+                  <CardHeader className="border-b border-border bg-muted/5 p-4 md:p-8">
+                    <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                       <div>
-                        <CardTitle className="text-2xl font-bold tracking-tight">{selectedHistory.title}</CardTitle>
-                        <CardDescription className="mt-1 flex items-center gap-2">
+                        <CardTitle className="text-xl md:text-2xl font-bold tracking-tight">{selectedHistory.title}</CardTitle>
+                        <CardDescription className="mt-1 flex items-center gap-2 text-[10px] md:text-xs">
                           <Clock className="h-3 w-3" /> {selectedHistory.timestamp}
                         </CardDescription>
                       </div>
-                      <Button variant="outline" size="sm" className="gap-2" onClick={() => setActiveTab('dashboard')}>
+                      <Button variant="outline" size="sm" className="gap-2 w-full md:w-auto h-8 md:h-9 text-[10px] md:text-xs" onClick={() => setActiveTab('dashboard')}>
                         Repeat Evaluation <ExternalLink className="h-3 w-3" />
                       </Button>
                     </div>
