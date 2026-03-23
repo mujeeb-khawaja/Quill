@@ -40,7 +40,6 @@ export default function Dashboard() {
   const [activeStepIndex, setActiveStepIndex] = useState(-1);
   const [gatekeeperReason, setGatekeeperReason] = useState('');
   const [proposal, setProposal] = useState('');
-  const [currentRfpText, setCurrentRfpText] = useState('');
   const [copied, setCopied] = useState(false);
   
   // History State
@@ -53,7 +52,7 @@ export default function Dashboard() {
       status: 'Drafted',
       is_match: true,
       reasoning: 'Matches all core infrastructure requirements.',
-      final_draft: 'Dear Hiring Manager, I am writing to express my interest in the Senior AWS Architect position...'
+      final_draft: 'Dear Hiring Manager, I am writing to express my interest in the Senior AWS Architect position using my experience in Python and AWS CDK...'
     },
     {
       id: '2',
@@ -108,7 +107,7 @@ export default function Dashboard() {
           formData.append('file', selectedFile);
           const response = await fetch('http://localhost:8000/api/evaluate-rfp', { method: 'POST', body: formData });
           const data = await response.json();
-          processResult(data.is_match, data.final_draft, data.gatekeeper_reasoning, selectedFile.name, "Actual RFP Body Content Placeholder");
+          processResult(data.is_match, data.final_draft, data.gatekeeper_reasoning, selectedFile.name, data.rfp_text || "Original text not captured.");
        } catch (err) {
           setStatus('rejected');
           setGatekeeperReason("Connection Failed. Is the backend running?");
@@ -118,13 +117,13 @@ export default function Dashboard() {
        const isSuccess = mode === 'mock-success';
        const runStep = (index: number) => {
          if (index >= STEPS.length) {
-            processResult(true, "Mock proposal generated for your testing...", "Matches requirements perfectly.", "Mock Job Title", "Original Job Description Text Content...");
+            processResult(true, "Mock proposal generated for your testing of the new UI overhaul...", "Matches requirements perfectly based on CV context.", "Senior Dev Role", "Seeking a senior developer with React and Node.js expertise...");
             return;
          }
          setActiveStepIndex(index);
          if (!isSuccess && STEPS[index].id === 'gatekeeper') {
             setTimeout(() => {
-               processResult(false, null, "Match Failed: Lacks specialized experience in the required domain.", "Mock Job Title (Rejected)", "Original Mock Text...");
+               processResult(false, null, "Match Failed: Candidate lacks the required 5+ years of Python expertise specified in the RFP.", "Job Posting #4521", "Python Engineer needed for high-scale backend services...");
             }, 2000);
             return;
          }
@@ -151,29 +150,29 @@ export default function Dashboard() {
   const selectedHistory = history.find(h => h.id === selectedHistoryId);
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground font-sans selection:bg-blue-500/30">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
       
       {/* --- TOP NAVIGATION --- */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-6 flex h-16 items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <ShieldAlert className="h-5 w-5 text-white" />
+            <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
+              <ShieldAlert className="h-5 w-5 text-primary-foreground" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight italic">AutoBid <span className="text-blue-500">AI</span></h1>
+            <h1 className="text-xl font-bold tracking-tight italic">AutoBid <span className="text-primary">AI</span></h1>
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-[400px]">
-            <TabsList className="bg-muted/50 border border-border">
-              <TabsTrigger value="dashboard" className="flex gap-2 items-center data-[state=active]:bg-background">
+            <TabsList className="bg-muted/50 border border-border p-1 gap-1">
+              <TabsTrigger value="dashboard" className="flex-1 gap-2 items-center">
                 <LayoutDashboard className="h-4 w-4" /> Dashboard
               </TabsTrigger>
-              <TabsTrigger value="history" className="flex gap-2 items-center data-[state=active]:bg-background">
+              <TabsTrigger value="history" className="flex-1 gap-2 items-center">
                 <History className="h-4 w-4" /> History
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-emerald-500 border-emerald-500/20 bg-emerald-500/5">Cloud Native</Badge>
+          <div className="hidden md:flex items-center gap-2">
+            <Badge variant="outline" className="text-muted-foreground border-border font-medium">v1.2.0-Alpha</Badge>
           </div>
         </div>
       </header>
@@ -186,23 +185,22 @@ export default function Dashboard() {
             
             {/* INPUT SIDEBAR */}
             <div className="lg:col-span-4 space-y-6">
-              <Card className="bg-card border-border shadow-2xl">
+              <Card className="bg-card border-border shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-xl">Evaluation Center</CardTitle>
-                  <CardDescription className="text-muted-foreground pt-1">Upload a PDF to trigger the Agentic Pipeline.</CardDescription>
+                  <CardTitle className="text-xl">Upload RFP</CardTitle>
+                  <CardDescription className="text-muted-foreground pt-1">Provide a PDF job description to begin.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div 
                     onClick={triggerUpload}
-                    className="group border-2 border-dashed border-border rounded-2xl p-12 flex flex-col items-center justify-center gap-4 hover:border-blue-500/50 hover:bg-muted/50 transition-all cursor-pointer relative overflow-hidden"
+                    className="group border-2 border-dashed border-border rounded-2xl p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
                   >
-                    <div className="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <UploadCloud className="h-12 w-12 text-muted-foreground group-hover:text-blue-500 transition-colors" />
+                    <UploadCloud className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-colors" />
                     <div className="text-center">
                       <p className="text-sm font-bold text-foreground">
-                        {selectedFile ? selectedFile.name : "Select RFP Document"}
+                        {selectedFile ? selectedFile.name : "Choose PDF File"}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">.pdf or .txt (Max 50MB)</p>
+                      <p className="text-xs text-muted-foreground mt-1">Maximum size: 50MB</p>
                     </div>
                     <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" />
                   </div>
@@ -211,13 +209,13 @@ export default function Dashboard() {
                     <Button 
                       onClick={() => runEvaluation('real')} 
                       disabled={!selectedFile || status === 'processing'}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                      className="bg-primary text-primary-foreground font-bold h-12 shadow-sm"
                     >
-                      {status === 'processing' ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "🚀 Run Agentic Workflow"}
+                      {status === 'processing' ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "🚀 Analyze Live RFP"}
                     </Button>
                     <div className="grid grid-cols-2 gap-2">
                       <Button variant="secondary" onClick={() => runEvaluation('mock-success')} className="text-xs h-10 border border-border">Mock Pass</Button>
-                      <Button variant="secondary" onClick={() => runEvaluation('mock-fail')} className="text-xs h-10 border border-border text-red-500">Mock Fail</Button>
+                      <Button variant="secondary" onClick={() => runEvaluation('mock-fail')} className="text-xs h-10 border border-border text-destructive">Mock Fail</Button>
                     </div>
                   </div>
                 </CardContent>
@@ -228,27 +226,27 @@ export default function Dashboard() {
             <div className="lg:col-span-8 flex flex-col gap-8">
               
               <div className="flex items-center justify-between px-2">
-                <h2 className="text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Reasoning Engine</h2>
+                <h2 className="text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
                 <div className="flex gap-2">
-                  {status === 'processing' && <Badge variant="outline" className="border-blue-500/50 text-blue-500 animate-pulse">Thinking...</Badge>}
-                  {status === 'success' && <Badge variant="outline" className="border-emerald-500/50 text-emerald-500">Completed</Badge>}
-                  {status === 'rejected' && <Badge variant="outline" className="border-red-500/50 text-red-500">Terminated</Badge>}
+                  {status === 'processing' && <Badge variant="outline" className="border-primary/50 text-primary animate-pulse">Running Pipeline</Badge>}
+                  {status === 'success' && <Badge variant="outline" className="border-emerald-500/50 text-emerald-500">Processing Success</Badge>}
+                  {status === 'rejected' && <Badge variant="outline" className="border-destructive/50 text-destructive">Process Halted</Badge>}
                 </div>
               </div>
 
               {status === 'idle' ? (
-                <div className="flex-grow border border-dashed border-border rounded-3xl flex flex-col items-center justify-center text-center p-20">
+                <div className="flex-grow border border-dashed border-border rounded-3xl flex flex-col items-center justify-center text-center p-20 bg-muted/5">
                   <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center mb-6">
                     <LayoutDashboard className="h-8 w-8 text-muted-foreground opacity-50" />
                   </div>
-                  <h3 className="text-lg font-bold">Awaiting Workflow</h3>
-                  <p className="text-sm text-muted-foreground mt-2 max-w-xs">Upload an RFP to start the multi-agent analysis and drafting pipeline.</p>
+                  <h3 className="text-lg font-bold">Waiting for Input...</h3>
+                  <p className="text-sm text-muted-foreground mt-2 max-w-xs">Start by uploading a recruitment document on the left sidebar.</p>
                 </div>
               ) : (
-                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-5 duration-700">
+                <div className="space-y-12">
                   
                   {/* STEPPER */}
-                  <div className="relative border-l border-border ml-6 space-y-12 py-2">
+                  <div className="relative border-l border-border ml-6 space-y-10 py-2">
                     {STEPS.map((step, index) => {
                       const Icon = step.icon;
                       const isPast = activeStepIndex > index || status === 'success' || (status === 'rejected' && activeStepIndex > index);
@@ -259,17 +257,17 @@ export default function Dashboard() {
                         <div key={step.id} className="relative pl-10">
                           <span className={`absolute -left-[17px] p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
                             ${isPast ? 'border-emerald-500 text-emerald-500' : 
-                              isCurrent ? 'border-blue-500 text-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] scale-125' : 
-                              isFailed ? 'border-red-500 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : 'border-border text-muted-foreground opacity-50'}
+                              isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-125' : 
+                              isFailed ? 'border-destructive text-destructive' : 'border-border text-muted-foreground opacity-50'}
                           `}>
                             {isCurrent ? <Loader2 className="h-4 w-4 animate-spin" /> : isPast ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                           </span>
-                          <div className="flex flex-col gap-1">
-                            <span className={`text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-blue-500' : isPast ? 'text-emerald-500' : isFailed ? 'text-red-500' : 'text-muted-foreground opacity-50'}`}>
-                              Agent: {step.label}
+                          <div className="flex flex-col">
+                            <span className={`text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
+                              Node: {step.label}
                             </span>
-                            <span className={`text-sm ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
-                              {isCurrent ? 'Analyzing requirements and generating context tokens...' : isPast ? 'Validation completed successfully.' : isFailed ? 'Workflow halted by Gatekeeper.' : 'Waiting to start...'}
+                            <span className={`text-sm mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                              {isCurrent ? 'Agent executing decision logic...' : isPast ? 'Task verified.' : isFailed ? 'Workflow Terminated.' : 'Pending activation...'}
                             </span>
                           </div>
                         </div>
@@ -279,28 +277,28 @@ export default function Dashboard() {
 
                   {/* RESULTS */}
                   {status === 'rejected' && (
-                    <Alert variant="destructive" className="bg-red-500/5 border-red-500/20 py-6 px-6 rounded-2xl animate-in zoom-in-95 duration-500">
+                    <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-8 px-8 rounded-2xl animate-in zoom-in-95">
                       <XCircle className="h-5 w-5" />
-                      <AlertTitle className="text-red-500 font-bold mb-2">Rejection Verdict</AlertTitle>
-                      <AlertDescription className="text-red-200/80 leading-relaxed italic">
+                      <AlertTitle className="font-bold mb-2">Gatekeeper Veto</AlertTitle>
+                      <AlertDescription className="italic opacity-90">
                         "{gatekeeperReason}"
                       </AlertDescription>
                     </Alert>
                   )}
 
                   {status === 'success' && (
-                    <Card className="bg-muted/30 border-border rounded-2xl overflow-hidden animate-in zoom-in-95 duration-700 shadow-2xl">
-                      <div className="bg-muted px-6 py-4 flex justify-between items-center">
+                    <Card className="bg-card border-border rounded-2xl overflow-hidden shadow-sm">
+                      <div className="bg-muted/50 px-6 py-4 flex justify-between items-center border-b border-border">
                         <div className="flex items-center gap-2">
-                          <PenTool className="h-4 w-4 text-emerald-500" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Final Approved Asset</span>
+                          <CheckCircle className="h-4 w-4 text-emerald-500" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Generated Response</span>
                         </div>
                         <Button variant="ghost" size="sm" onClick={() => handleCopy(proposal)} className="h-8 gap-2 text-xs">
-                          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                          {copied ? "Copied" : "Copy to Clipboard"}
+                          {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                          {copied ? "Copied" : "Copy Draft"}
                         </Button>
                       </div>
-                      <div className="p-8 text-sm leading-relaxed font-serif whitespace-pre-wrap text-foreground/90">
+                      <div className="p-8 text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
                         {proposal}
                       </div>
                     </Card>
@@ -315,100 +313,100 @@ export default function Dashboard() {
         {activeTab === 'history' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 min-h-[600px]">
             
-            {/* LEFT COLUMN: MASTER LIST */}
-            <div className="lg:col-span-4 border-r border-border pr-6 space-y-4">
-               <h3 className="text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground mb-4">Past Sessions</h3>
-               <ScrollArea className="h-[700px]">
-                  <div className="space-y-3">
+            {/* LIST */}
+            <div className="lg:col-span-4 lg:border-r border-border lg:pr-6 space-y-4">
+               <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground px-2">Session Log</h3>
+               <ScrollArea className="h-[700px] w-full">
+                  <div className="space-y-3 px-2">
                     {history.map(item => (
                       <div 
                         key={item.id}
                         onClick={() => setSelectedHistoryId(item.id)}
                         className={`group p-4 rounded-xl border transition-all cursor-pointer hover:bg-muted/50
-                          ${selectedHistoryId === item.id ? 'bg-muted border-blue-500/50 ring-1 ring-blue-500/50' : 'bg-card border-border'}
-                          ${item.status === 'Drafted' ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-red-500'}
+                          ${selectedHistoryId === item.id ? 'bg-muted border-primary/50' : 'bg-card border-border'}
+                          ${item.status === 'Drafted' ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-destructive'}
                         `}
                       >
                         <div className="flex justify-between items-start mb-2">
-                          <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1 uppercase">
+                          <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1">
                             <Clock className="h-3 w-3" /> {item.timestamp}
                           </span>
-                          <Badge className={`${item.status === 'Drafted' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'} border-none text-[10px]`}>
+                          <Badge variant="outline" className={`${item.status === 'Drafted' ? 'text-emerald-500 border-emerald-500/20' : 'text-destructive border-destructive/20'} text-[9px]`}>
                             {item.status}
                           </Badge>
                         </div>
-                        <h4 className="font-bold text-sm truncate group-hover:text-blue-500 transition-colors">{item.title}</h4>
+                        <h4 className="font-bold text-sm truncate">{item.title}</h4>
                       </div>
                     ))}
                   </div>
                </ScrollArea>
             </div>
 
-            {/* RIGHT COLUMN: DETAIL VIEW */}
+            {/* DETAIL */}
             <div className="lg:col-span-8">
               {selectedHistory ? (
-                <div className="space-y-6 animate-in fade-in duration-500">
-                  <div className="flex justify-between items-end border-b border-border pb-6">
-                    <div>
-                      <h2 className="text-2xl font-bold italic">{selectedHistory.title}</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Processed on {selectedHistory.timestamp}</p>
-                    </div>
-                    <Button variant="outline" className="gap-2 text-xs border-border" onClick={() => setActiveTab('dashboard')}>
-                      Re-run Evaluation <ExternalLink className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  <Tabs defaultValue="output" className="w-full mt-6">
-                    <TabsList className="bg-muted border border-border w-full justify-start rounded-none bg-transparent border-t-0 border-x-0 border-b pb-0 h-auto">
-                      <TabsTrigger value="output" className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent pb-3 px-6 text-xs font-bold uppercase tracking-widest">AI Output</TabsTrigger>
-                      <TabsTrigger value="input" className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent pb-3 px-6 text-xs font-bold uppercase tracking-widest">Original RFP</TabsTrigger>
+                <Card className="bg-card border-border shadow-sm overflow-hidden h-fit">
+                  <CardHeader className="border-b border-border bg-muted/5 pb-8">
+                      <div className="flex justify-between items-start">
+                        <div>
+                           <CardTitle className="text-2xl font-bold tracking-tight">{selectedHistory.title}</CardTitle>
+                           <CardDescription className="mt-1 flex items-center gap-2">
+                             <Clock className="h-3 w-3" /> {selectedHistory.timestamp}
+                           </CardDescription>
+                        </div>
+                        <Button variant="outline" size="sm" className="gap-2" onClick={() => setActiveTab('dashboard')}>
+                           Repeat Evaluation <ExternalLink className="h-3 w-3" />
+                        </Button>
+                      </div>
+                  </CardHeader>
+                  
+                  <Tabs defaultValue="output" className="w-full">
+                    <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-border p-1 gap-2">
+                      <TabsTrigger value="output" className="flex-1">AI Verdict</TabsTrigger>
+                      <TabsTrigger value="input" className="flex-1">Source RFP</TabsTrigger>
                     </TabsList>
                     
-                    <TabsContent value="output" className="py-6 space-y-6">
+                    <TabsContent value="output" className="p-8">
                       {selectedHistory.is_match ? (
-                        <Card className="bg-muted/10 border-border rounded-2xl overflow-hidden shadow-2xl">
-                          <div className="bg-muted/50 px-6 py-4 flex justify-between items-center border-b border-border">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Proposal Result</span>
-                            <Button size="sm" variant="ghost" onClick={() => handleCopy(selectedHistory.final_draft || '')} className="h-8 gap-2 text-xs">
-                               <Copy className="h-3.5 w-3.5" /> Copy Draft
-                            </Button>
-                          </div>
-                          <div className="p-8 text-sm leading-relaxed font-serif whitespace-pre-wrap">
-                            {selectedHistory.final_draft}
-                          </div>
-                        </Card>
+                        <div className="space-y-6">
+                           <div className="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                              <p className="text-xs uppercase font-bold text-emerald-500 tracking-widest mb-2">Gatekeeper Summary</p>
+                              <p className="text-sm italic opacity-90">{selectedHistory.reasoning}</p>
+                           </div>
+                           <Separator />
+                           <div className="flex justify-between items-center">
+                              <h5 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Proposal Draft</h5>
+                              <Button variant="secondary" size="sm" onClick={() => handleCopy(selectedHistory.final_draft || '')}>
+                                Copy Text
+                              </Button>
+                           </div>
+                           <div className="text-sm leading-relaxed whitespace-pre-wrap p-2">{selectedHistory.final_draft}</div>
+                        </div>
                       ) : (
-                        <div className="space-y-4">
-                           <Alert variant="destructive" className="bg-red-500/5 border-red-500/20 py-8 px-8 rounded-2xl">
-                              <XCircle className="h-5 w-5" />
-                              <AlertTitle className="text-red-500 font-bold mb-2">Gatekeeper Veto</AlertTitle>
-                              <AlertDescription className="text-red-200/80 leading-relaxed italic">
-                                "{selectedHistory.reasoning}"
-                              </AlertDescription>
-                           </Alert>
-                           <p className="text-xs text-muted-foreground text-center italic">This RFP was filtered out to protect against low-matching submissions.</p>
+                        <div className="p-10 text-center animate-in zoom-in-95">
+                           <XCircle className="h-16 w-16 text-destructive/30 mx-auto mb-4" />
+                           <h4 className="text-lg font-bold">Proposal Rejected</h4>
+                           <p className="text-sm text-muted-foreground mt-2 italic px-8">"{selectedHistory.reasoning}"</p>
                         </div>
                       )}
                     </TabsContent>
 
-                    <TabsContent value="input" className="py-6">
-                      <div className="p-8 rounded-2xl bg-muted/20 border border-border text-xs leading-relaxed font-mono whitespace-pre-wrap text-muted-foreground">
+                    <TabsContent value="input" className="p-8">
+                      <div className="p-8 rounded-xl bg-muted/30 border border-border text-xs leading-relaxed font-mono whitespace-pre-wrap text-muted-foreground min-h-[300px]">
                         {selectedHistory.original_text}
                       </div>
                     </TabsContent>
                   </Tabs>
-                </div>
+                </Card>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-30 text-center">
+                <div className="h-[500px] border border-dashed border-border rounded-3xl flex flex-col items-center justify-center text-muted-foreground opacity-30">
                   <History className="h-16 w-16 mb-4" />
-                  <p className="text-sm font-bold uppercase tracking-widest">Select a session from the list</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.3em]">Select a log entry</p>
                 </div>
               )}
             </div>
-
           </div>
         )}
-
       </main>
     </div>
   );

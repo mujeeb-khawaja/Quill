@@ -84,6 +84,7 @@ async def evaluate_rfp(file: UploadFile = File(...)):
 
     return {
         "status": "success",
+        "rfp_text": rfp_text,
         "is_match": is_match,
         "gatekeeper_reasoning": reasoning,
         "final_draft": draft
