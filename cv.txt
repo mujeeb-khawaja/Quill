@@ -1,0 +1,188 @@
+Mujeeb Abdul Khawaja
+Date of birth: 18/09/2002 Place of birth: Kabul, Afghanistan Nationality: Afghan Gender: Male
+Phone number: (+92) 03290813877 (Mobile) Email address: mujeebkhawaja29@gmail.com Website:
+https://linkedin.com/in/mujeeb-khawaja-24a545247/ Website: https://github.com/mujeeb-khawaja
+Address: Phase 2, Hayatabad, 25000, Peshawar, Pakistan (Home)
+ASSOCIATE SOFTWARE ENGINEER – DEVBLOCK STUDIOS – 14/11/2024 – Current – PESHAWAR, PAKISTAN
+Worked as a Software Engineer across Full-Stack development and Machine Learning Engineering, contributing to the design,
+development, and deployment of production-grade web applications and AI-powered platforms. Collaborated with crossfunctional
+teams to build scalable backend services, responsive user interfaces, and LLM-driven retrieval and automation
+pipelines, with a focus on performance optimization, cost efficiency, and real-world usability.
+ML Engineer
+Key Results:
+• Built and optimized an intelligent RAG pipeline using vector databases to process large-scale document corpora,
+enabling semantic search with ~2.3s average response time in production.
+• Fine-tuned Mistral-7B using QLoRA (4-bit quantization) on a 40K-sample dataset, reducing training costs by ~60%
+while preserving domain-specific reasoning quality.
+• Designed and deployed an LLM query routing system using a fine-tuned Qwen2.5-7B, achieving 92% routing
+accuracy and reducing unnecessary vector searches, leading to ~40% external API cost savings.
+• Contributed to architecting a bilingual AI platform handling 400k+ records, achieving sub-3-second query latency
+through indexing, data modelling, and retrieval optimization.
+• Built a multi-tenant financial document intelligence system, integrating AWS S3 streaming for secure previews
+and supporting scalable ingestion and processing pipelines.
+• Automated bulk data ingestion workflows processing 8 heterogeneous file formats, reducing manual
+initialization and data entry time by ~85%.
+Full-Stack Developer
+Key Results:
+• Built and shipped pixel-perfect Figma-to-Code interfaces using React + Tailwind CSS, delivering 300+ screens/
+components/variants with responsive UX across devices.
+• Developed reusable UI patterns (forms, tables, dashboards, modals), reducing UI rework by ~80% and
+accelerating sprint delivery.
+• Implemented backend services using Node.js + Express.js, following clean controller/service architecture for
+maintainable feature development.
+• Designed and delivered REST APIs (CRUD, filtering, sorting, pagination) with consistent request/response
+contracts for frontend consumption.
+• Diagnosed and resolved frontend + backend bottlenecks (API payload shaping, query tuning, caching), improving
+page/API load performance by ~25% in critical user flows.
+• Improved release reliability using Git workflows and CI/CD, reducing deployment failures by ~40% and enabling
+repeatable releases across dev/staging/prod.
+FULL STACK DEVELOPER (PART TIME) – SHAHID AHMAD & CO. – 08/2025 – Current – PESHAWAR, PAKISTAN
+Shahid Ahmad & Co. (SACO) is one of Pakistan’s leading firms of Chartered Accountants, offering audit, assurance, taxation,
+corporate advisory, management consultancy, human resource development, and IT control services to public and private
+sector clients across the country and abroad.
+As a part-time full stack developer, I developed and deployed enterprise-grade financial compliance software for the
+manufacturing sector.
+Key Results:
+• Engineered a production-ready POS & Digital Invoicing System deployed at major enterprises (Daud Sons
+Industries, Khurshid Soap, Genesis Trading).
+WORK EXPERIENCE
+• Integrated the FBR PRAL Gateway API for real-time digital invoice validation, ensuring fully tax compliance for
+clients.
+• Built a secure financial engine using Node.js/Express.js and SQLite3, utilizing Bcrypt for security and Puppeteer
+for automated, QR-coded PDF invoice generation.
+Tech Stack: Node.js, Express.js, SQLite3, HTML/CSS, FBR PRAL API, Bcrypt, html-pdf
+09/2021 – 07/2025 Peshawar, Pakistan
+BSC SOFTWARE ENGINEERING — CGPA 3.30/4.00 IMSciences
+Website https://imsciences.edu.pk/ Field of study Software and applications development and analysis
+2019 – 2021 Peshawar, Pakistan
+HIGHER SECONDARY SCHOOL CERTIFICATE - HSSC Peshawar Model Degree College
+2019 Peshawar, Pakistan
+SECONDARY SCHOOL CERTIFICATE - SSC Forward Model School
+2025
+VidEx | Group Final Year Project
+Flutter, Python, MongoDB, OpenCV, CLIP, FAISS, PyTorch, PIL, NumPy
+• Developed a cross-platform Flutter application that identifies movies from short clips by extracting and analysing
+visual information from video frames.
+• Designed a video-to-image processing pipeline using OpenCV to sample keyframes, perform color-space
+conversion, and prepare images for deep vision models.
+• Generated high-dimensional visual embeddings using the CLIP vision transformer and applied FAISS-based
+similarity search to match clips in visual feature space.
+Link https://github.com/mujeeb-khawaja/VidEX
+2026 – CURRENT
+Afghan Civil Law Legal AI System
+• Built a RAG system over the Afghan Civil Code (9,000+ legal provisions) to make Afghan law accessible to
+diaspora communities lacking legal counsel — achieving 93% answer accuracy on a hand-crafted evaluation
+suite.
+• Engineered a 3-stage retrieval pipeline (HyDE → Hybrid vector/BM25 search → Neural cross-encoder re-ranking),
+reducing retrieval noise by ~40% over naive vector search.
+• Implemented HyDE to bridge colloquial queries with formal legal language, and designed context-aware
+chunking preserving Book → Chapter → Article hierarchy for precise source attribution.
+• Deployed full-stack: FastAPI backend + React frontend with persistent chat history, Markdown rendering, and
+collapsible legal citations.
+Link https://github.com/mujeeb-khawaja/Legal-RAGbot
+2024
+Automated E-commerce Market Intelligence System
+• Built an automated e-commerce price and availability monitoring system for a large UK marketplace, tracking
+competitive ownership signals across 1000+ SKUs in near real time.
+• Developed a robust data acquisition pipeline in Python using Selenium and BeautifulSoup, ensuring 95%+
+system uptime under dynamic page conditions.
+• Implemented event-driven alerting (SMTP) to notify stakeholders within minutes of market changes, reducing
+reaction time to <5 minutes.
+• Designed a data persistence and reporting layer using Pandas and Excel, enabling historical analysis, trend
+tracking, and BI-ready outputs.
+• Delivered measurable impact by eliminating ~28 hours/week of manual monitoring and supporting faster pricing
+decisions with a projected 30–40% improvement in competitive outcomes.
+EDUCATION AND TRAINING
+PROJECTS
+2025
+Automated Stock Report Generation
+Python, Pandas, OpenPyXL, xlwings, pdfplumber, chardet
+• Reduced manual inventory control time from 4 hours to less than 5 minutes by developing an automated system
+to read and process stock and order data from heterogeneous sources (CSV, Excel, PDF).
+• Implemented intelligent SKU classification using pattern recognition and colour detection to process supplier
+pricelists and automatically update stock status.
+• Integrated PDF data extraction (pdfplumber) to reliably retrieve SKU details and pricing from unstructured
+supplier documents.
+2024
+Advanced E-commerce Data Acquisition Pipeline
+Python, Selenium, BeautifulSoup, Pandas, Undetected ChromeDriver, WebDriver Manager, OpenPyXL
+• Engineered a highly resilient, automated web scraper using Python (Selenium, Undetected
+ChromeDriver) to bypass sophisticated anti-bot detection and extract high-value product data (pricing,
+availability, seller metrics) from a large-scale e-commerce platform and Simulated human-like browsing
+behaviour
+2024
+AutoList Pro | E-commerce Product Scraper & Uploader
+Python, Selenium, PyAutoGUI, Requests, Automation
+• Developed a fully automated web scraper to extract product details (title, price, stock, images, SKU, and
+descriptions) and upload them to an e-commerce admin panel.
+• Used Selenium & PyAutoGUI for dynamic data extraction, form filling, and handling file upload dialogs.
+• Implemented error handling, logging, and intelligent retries for a robust and scalable workflow.
+• Optimized the process, reducing product listing time from 4+ minutes to under 40 seconds.
+Programming Languages
+Python JavaScript PHP
+Backend Frameworks
+Django python NodeJS, Express.js Laravel
+Frontend Frameworks
+Tailwind CSS React Flutter
+Databases & ORM
+SQLite3 PostgreSQL MongoDB MySQL
+AI/ML & Architecture
+PyTorch CLIP FAISS RAG LLM/API Integration OpenCV Automation | Web Scrapping | Scripting
+Tools & Techniques
+JWT authentication Alpine.js Vite CI/CD (Github) BeautifulSoup REST API Selenium (Java/Python)
+Leadership
+Leadership Team management
+Data & Automation
+Pandas - Numpy pdfplumber Web automation (Selenium, Puppeteer) data cleaning & data managment
+Mother tongue(s): PERSIAN
+SKILLS
+LANGUAGE SKILLS
+Other language(s):
+UNDERSTANDING SPEAKING WRITING
+Listening Reading Spoken production Spoken interaction
+PASHTO B2 A1 B2 B2 A1
+URDU C2 C1 C2 C2 C1
+ENGLISH C1 B2 C1 C1 B2
+Levels: A1 and A2: Basic user; B1 and B2: Independent user; C1 and C2: Proficient user
+IBM SkillsBuild, 08/03/2025
+Artificial Intelligence Fundamentals
+Link https://www.credly.com/earner/earned/badge/2c064dfa-858b-4a86-a673-37645f62cf24
+Microsoft, 03/03/2026
+Advanced AI and Machine Learning Techniques and Capstone
+Mode of learning: Online
+Link https://www.coursera.org/account/accomplishments/verify/TWIKQP5DS6ZC
+Cisco, 12/06/2024
+CyberOps Associate
+Link https://www.credly.com/badges/ca7def17-99c8-4d59-9cd7-706e56e1d4d1/linked_in?t=ssljvm
+DataCamp, 21/08/2025
+GitHub Foundations
+Mode of learning: Online
+Project Management Institute, 02/03/2025
+Practical Application of Gen AI for Project Managers
+Mode of learning: Work based
+Link https://www.credly.com/badges/c76a10ca-592b-442f-8e00-04cb8ce72612/linked_in_profile
+Cisco, 11/06/2023
+IT Essentials
+Link https://www.credly.com/badges/dfe9c50f-15cc-4312-bd1a-d191ca0395ba/linked_in?t=sslk03
+365 Data Science, 07/11/2021
+Introduction to Python
+Mode of learning: Online
+Link https://learn.365datascience.com/certificates/CC-C428FF2223/
+IM | DigiSol, 2024
+Mobile Application Development
+CERTIFICATIONS
+2025 Peshawar
+Music Team Lead – Business Fest (University Flagship Event)
+• Led the university's Music Team for the annual Business Fest, overseeing the creative process from concept to
+final delivery.
+• Wrote the lyric writing with my team, song composition, and professional mix-mastering of the team's original
+track.
+• Organized and performed in the final live event and music video.
+Syed Miqdad Ahmad Chief Executive Officer
+DevBlock Studios
+Email syedmiqdadahmad@devblockstudios.com Phone (+92) 915825616
+Prof. Dr. Awais Adnan Professor
+School of Computer Science & IT | Institute of Management Sciences
+Email awais.adnan@imsciences.edu.pk Phone (+92) 3339129742
+VOLUNTEERING
+RECOMMENDATIONS

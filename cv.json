@@ -1,0 +1,72 @@
+[
+  {
+    "text": "Profile Summary: Mujeeb Abdul Khawaja is an Associate Software Engineer based in Peshawar, Pakistan. He specializes in Full-Stack development and Machine Learning Engineering. He contributes to the design, development, and deployment of production-grade web applications and AI-powered platforms. He collaborates with cross-functional teams to build scalable backend services, responsive user interfaces, and LLM-driven retrieval and automation pipelines, focusing on performance optimization, cost efficiency, and real-world usability.",
+    "metadata": {
+      "category": "profile",
+      "skills": ["Software Engineering", "Machine Learning", "Full-Stack Development", "LLM Pipelines"]
+    }
+  },
+  {
+    "text": "Role: ML Engineer at DevBlock Studios (Nov 2024 - Current). Built and optimized an intelligent RAG pipeline using vector databases to process large-scale document corpora, enabling semantic search with ~2.3s average response time. Fine-tuned Mistral-7B using QLoRA (4-bit quantization) on a 40K-sample dataset, reducing training costs by ~60%. Designed and deployed an LLM query routing system using a fine-tuned Qwen2.5-7B, achieving 92% routing accuracy and reducing unnecessary vector searches, saving ~40% on API costs. Contributed to architecting a bilingual AI platform handling 400k+ records. Built a multi-tenant financial document intelligence system integrating AWS S3 streaming.",
+    "metadata": {
+      "category": "work_experience",
+      "skills": ["Machine Learning", "RAG", "Vector Databases", "Mistral-7B", "QLoRA", "Qwen2.5", "AWS S3", "LLM Routing"]
+    }
+  },
+  {
+    "text": "Role: Full-Stack Developer at DevBlock Studios (Nov 2024 - Current). Built pixel-perfect Figma-to-Code interfaces using React and Tailwind CSS, delivering 300+ responsive screens. Implemented backend services using Node.js and Express.js following clean architecture. Designed REST APIs (CRUD, filtering, sorting, pagination). Diagnosed and resolved frontend and backend bottlenecks, improving page/API load performance by ~25%. Improved release reliability using Git workflows and CI/CD, reducing deployment failures by ~40%.",
+    "metadata": {
+      "category": "work_experience",
+      "skills": ["React", "Tailwind CSS", "Node.js", "Express.js", "REST API", "CI/CD", "Git"]
+    }
+  },
+  {
+    "text": "Role: Full Stack Developer (Part-Time) at Shahid Ahmad & Co. (Aug 2024 - Current). Engineered a production-ready POS & Digital Invoicing System deployed at major enterprise clients. Integrated the FBR PRAL Gateway API for real-time digital invoice validation and tax compliance. Built a secure financial engine using Node.js, Express.js, and SQLite3, utilizing Bcrypt for security and Puppeteer for automated, QR-coded PDF invoice generation.",
+    "metadata": {
+      "category": "work_experience",
+      "skills": ["Node.js", "Express.js", "SQLite3", "API Integration", "Puppeteer", "Financial Systems"]
+    }
+  },
+  {
+    "text": "Project: Afghan Civil Law Legal AI System. Built a RAG system over the Afghan Civil Code (9,000+ legal provisions) achieving 93% answer accuracy. Engineered a 3-stage retrieval pipeline: HyDE, Hybrid vector/BM25 search, and Neural cross-encoder re-ranking, reducing retrieval noise by ~40%. Designed context-aware chunking preserving Book/Chapter/Article hierarchy for precise source attribution. Deployed using a FastAPI backend and React frontend with persistent chat history and collapsible legal citations.",
+    "metadata": {
+      "category": "project",
+      "skills": ["RAG", "HyDE", "Cross-encoder", "FastAPI", "React", "Legal AI", "Python"]
+    }
+  },
+  {
+    "text": "Project: VidEx - Final Year Project. Developed a cross-platform Flutter application that identifies movies from short clips by extracting and analyzing visual information from video frames. Designed a video-to-image processing pipeline using OpenCV to sample keyframes. Generated high-dimensional visual embeddings using the CLIP vision transformer and applied FAISS-based similarity search to match clips in visual feature space.",
+    "metadata": {
+      "category": "project",
+      "skills": ["Flutter", "Python", "OpenCV", "CLIP", "FAISS", "PyTorch", "Computer Vision"]
+    }
+  },
+  {
+    "text": "Project: Automated E-commerce Market Intelligence System (2024). Built an automated e-commerce price and availability monitoring system tracking competitive ownership signals across 1000+ SKUs. Developed a robust data acquisition pipeline in Python using Selenium and BeautifulSoup, ensuring 95%+ system uptime. Implemented event-driven alerting via SMTP and designed a data reporting layer using Pandas. Eliminated ~28 hours/week of manual monitoring.",
+    "metadata": {
+      "category": "project",
+      "skills": ["Python", "Selenium", "BeautifulSoup", "Pandas", "Web Scraping", "Data Automation"]
+    }
+  },
+  {
+    "text": "Projects: E-commerce Product Scraper & Stock Report Automation. Developed automated systems to process stock/order data from CSV, Excel, and PDFs using Pandas and pdfplumber, reducing manual inventory control time from 4 hours to less than 5 minutes. Engineered a highly resilient web scraper using Python and Undetected ChromeDriver to extract high-value product data. Used Selenium and PyAutoGUI to automate uploading product details to an e-commerce admin panel.",
+    "metadata": {
+      "category": "project",
+      "skills": ["Python", "Pandas", "Selenium", "pdfplumber", "PyAutoGUI", "Automation"]
+    }
+  },
+  {
+    "text": "Education: BSc Software Engineering from IMSciences, Peshawar (CGPA: 3.30/4.00). Graduating in 2025. Certifications include: Microsoft Advanced AI and Machine Learning Techniques, IBM Artificial Intelligence Fundamentals, Cisco CyberOps Associate, DataCamp GitHub Foundations, and PMI Practical Application of Gen AI for Project Managers.",
+    "metadata": {
+      "category": "education",
+      "skills": ["Software Engineering", "AI Certifications", "CyberOps", "Project Management"]
+    }
+  },
+  {
+    "text": "Technical Skills Summary. Programming Languages: Python, JavaScript, PHP. Backend Frameworks: Django, Node.js, Express.js, Laravel. Frontend: React, Tailwind CSS, Flutter. Databases: SQLite3, PostgreSQL, MongoDB, MySQL. AI/ML: PyTorch, CLIP, FAISS, RAG, LLM APIs, OpenCV. Tools: REST API, Git, CI/CD, JWT, Vite, Selenium, Puppeteer, Pandas, Numpy.",
+    "metadata": {
+      "category": "skills",
+      "skills": ["Python", "JavaScript", "React", "Node.js", "Django", "PostgreSQL", "MongoDB", "LLM", "RAG", "PyTorch"]
+    }
+  }
+]
