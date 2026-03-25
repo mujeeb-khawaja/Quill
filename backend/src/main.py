@@ -60,6 +60,8 @@ async def evaluate_rfp(file: UploadFile = File(...)):
     # 3. Setup Initial State for LangGraph
     initial_state = {
         "rfp_text": rfp_text,
+        "document_type": "",
+        "is_valid_rfp": False,
         "requirements": [],
         "cv_context": "",
         "is_match": False,

@@ -23,10 +23,12 @@ load_dotenv()
 # --- STATE DEFINITION ---
 class AgentState(TypedDict):
     rfp_text: str
+    document_type: str       # Classifier: e.g. 'Job RFP', 'Motivation Letter', 'Resume'
+    is_valid_rfp: bool       # Classifier: True only if document is a valid RFP/Job Description
     requirements: List[str]
     cv_context: str
-    is_match: bool          # Phase 2.5 Evaluator decision
-    evaluator_reasoning: str # Phase 2.5 Evaluator reasoning
+    is_match: bool           # Evaluator decision
+    evaluator_reasoning: str # Evaluator reasoning
     current_draft: str
     review_feedback: str
     revision_count: int
@@ -88,40 +90,75 @@ def get_retriever():
         global_retriever = _init_retriever()
     return global_retriever
 
-# --- NODE 1: EXTRACTOR ---
+# --- NODE 1: EXTRACTOR + DOCUMENT CLASSIFIER ---
 def extractor_node(state: AgentState):
     print("\n" + "="*50)
-    print("🛠️  [NODE: EXTRACTOR] - Reading RFP to find requirements")
+    print("🛠️  [NODE: EXTRACTOR] - Classifying document & extracting requirements")
     print("="*50)
     print(f"   -> Received RFP Text ({len(state.get('rfp_text', ''))} characters)")
-    
+
     prompt = f"""
-    You are an expert technical AI architect. Read the following RFP document text and extract the core technical and business requirements.
-    Output ONLY a valid JSON array of strings (e.g., ["Requirement 1", "Requirement 2"]). No other text.
+    You are an expert document classifier and technical AI architect.
     
-    RFP TEXT:
+    STEP 1 — CLASSIFY THE DOCUMENT:
+    Determine the true nature of the provided document text.
+    - If it is a Request for Proposal (RFP), Job Description, Freelance Gig Posting, or any document
+      soliciting a professional bid or application FOR A SERVICE/ROLE, set "is_valid_rfp" to true.
+    - If it is a personal letter (cover letter, motivation letter), resume/CV, receipt, invoice,
+      or any other document that is NOT asking for a proposal, set "is_valid_rfp" to false.
+    
+    STEP 2 — CLASSIFY THE DOCUMENT TYPE:
+    Identify a short, human-readable label for the document type.
+    Examples: "Job RFP", "Freelance Gig", "Motivation Letter", "Resume", "Invoice", "Unknown Document".
+
+    STEP 3 — EXTRACT REQUIREMENTS (only if is_valid_rfp is true):
+    If it IS a valid RFP, extract the core technical and business requirements as a JSON array of strings.
+    If it is NOT a valid RFP, leave "extracted_requirements" as an empty array [].
+    
+    Output ONLY a valid JSON object in exactly this format. No other text:
+    {{"is_valid_rfp": true, "document_type": "Job RFP", "extracted_requirements": ["Requirement 1", "Requirement 2"]}}
+    
+    DOCUMENT TEXT:
     {state['rfp_text']}
     """
-    print("   -> Sending prompt to LLM...")
+
+    print("   -> Sending document to LLM for classification and extraction...")
     response = llm.invoke(prompt)
-    
+
     try:
         content = response.content
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].strip()
-        requirements = json.loads(content)
+        result = json.loads(content)
+
+        is_valid_rfp = bool(result.get("is_valid_rfp", False))
+        document_type = str(result.get("document_type", "Unknown Document"))
+        requirements = result.get("extracted_requirements", [])
         if not isinstance(requirements, list):
-            requirements = [str(requirements)]
-        print(f"   ✅ Successfully Extracted {len(requirements)} Requirements:")
-        for r in requirements:
-            print(f"      - {r}")
+            requirements = []
+
+        print(f"   -> Document Type: {document_type}")
+        print(f"   -> Is Valid RFP: {'✅ YES' if is_valid_rfp else '❌ NO'}")
+        if is_valid_rfp:
+            print(f"   ✅ Successfully Extracted {len(requirements)} Requirements:")
+            for r in requirements:
+                print(f"      - {r}")
+        else:
+            print(f"   ⛔ Halting pipeline — document is not a valid RFP.")
+
     except Exception as e:
-        print(f"   ⚠️ Warning: Extractor failed clean JSON. Error: {e}")
-        requirements = [response.content]
-        
-    return {"requirements": requirements}
+        print(f"   ⚠️ Warning: Extractor/Classifier failed clean JSON. Error: {e}")
+        is_valid_rfp = False
+        document_type = "Unknown Document"
+        requirements = []
+
+    return {
+        "is_valid_rfp": is_valid_rfp,
+        "document_type": document_type,
+        "requirements": requirements
+    }
 
 # --- NODE 2: RESEARCHER ---
 def researcher_node(state: AgentState):
@@ -266,6 +303,27 @@ def reviewer_node(state: AgentState):
         return {"review_feedback": feedback}
 
 # --- ROUTING LOGIC ---
+def route_after_classifier(state: AgentState):
+    """Routes to researcher if valid RFP, otherwise halts immediately with a clear message."""
+    print("\n" + "-"*40)
+    print("🔀 [ROUTER] - Document Classifier Decision")
+    if state.get("is_valid_rfp", False):
+        print("   -> Path: Valid RFP detected. Routing to RESEARCHER.")
+        print("-"*40)
+        return "researcher"
+    else:
+        doc_type = state.get("document_type", "Unknown Document")
+        rejection_message = (
+            f"Document Error: This appears to be a '{doc_type}', not a valid Job RFP or "
+            f"Freelance Gig description. Please upload a proper RFP or job posting for evaluation."
+        )
+        print(f"   -> Path: Invalid document type ('{doc_type}'). Halting pipeline.")
+        print("-"*40)
+        # Inject the rejection message into state so the frontend Gatekeeper UI displays it
+        state["evaluator_reasoning"] = rejection_message
+        state["is_match"] = False
+        return END
+
 def evaluate_match(state: AgentState):
     print("\n" + "-"*40)
     print("🔀 [ROUTER] - Gatekeeper Decision")
@@ -289,29 +347,30 @@ def should_continue_revision(state: AgentState):
         print("   -> Path: Max Revisions Reached (3). Forcing END.")
         print("-"*40)
         return END
-    
+
     print("   -> Path: Proposal Failed. Routing back to DRAFTER for a rewrite.")
     print("-"*40)
     return "drafter"
 
 # --- COMPILE GRAPH ---
 def build_graph():
-    print("\n[SYSTEM] Compiling LangGraph State Machine with Evaluator Filter...")
+    print("\n[SYSTEM] Compiling LangGraph State Machine with Document Classifier + Evaluator Filter...")
     graph = StateGraph(AgentState)
-    
+
     graph.add_node("extractor", extractor_node)
     graph.add_node("researcher", researcher_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("drafter", drafter_node)
     graph.add_node("reviewer", reviewer_node)
-    
+
     graph.set_entry_point("extractor")
-    graph.add_edge("extractor", "researcher")
+    # After extractor: classify first — only proceed to researcher if it's a valid RFP
+    graph.add_conditional_edges("extractor", route_after_classifier)
     graph.add_edge("researcher", "evaluator")
     graph.add_conditional_edges("evaluator", evaluate_match)
     graph.add_edge("drafter", "reviewer")
     graph.add_conditional_edges("reviewer", should_continue_revision)
-    
+
     return graph.compile()
 
 # --- LOCAL BATCH TESTING ---
@@ -354,6 +413,8 @@ if __name__ == "__main__":
                 
                 initial_state = {
                     "rfp_text": rfp_text,
+                    "document_type": "",
+                    "is_valid_rfp": False,
                     "requirements": [],
                     "cv_context": "",
                     "is_match": False,

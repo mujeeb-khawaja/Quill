@@ -107,7 +107,7 @@ export default function Dashboard() {
     setActiveStepIndex(0); // Show first step as active
     setGatekeeperReason('');
     setProposal('');
-    
+
     // We'll track these to update history at the very end
     let finalIsMatch = false;
     let finalDraft = '';
@@ -124,7 +124,7 @@ export default function Dashboard() {
       });
 
       if (!response.body) throw new Error("No response body");
-      
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -154,52 +154,67 @@ export default function Dashboard() {
 
             if (data.event === 'init') {
               extractedRfpText = data.rfp_text;
-            } 
+            }
             else if (data.event === 'node_update') {
               const { node, updates } = data;
-              
-              // Move the progress indicator
-              if (nodeToStepMap[node] !== undefined) {
-                setActiveStepIndex(nodeToStepMap[node]);
-              }
 
-              // Specific Node handling
-              if (node === 'evaluator') {
-                if (updates.is_match === false) {
+              // --- EXTRACTOR: check classification result first ---
+              if (node === 'extractor') {
+                if (updates.is_valid_rfp === false) {
+                  // Keep activeStepIndex at 0 so Extractor shows as the FAILED step
+                  setActiveStepIndex(0);
+                  const docType = updates.document_type || 'Unknown Document';
+                  const reason = `Document Error: This appears to be a '${docType}', not a valid Job RFP or Freelance Gig description. Please upload a proper RFP or job posting for evaluation.`;
                   finalIsMatch = false;
-                  finalReasoning = updates.evaluator_reasoning;
+                  finalReasoning = reason;
                   setStatus('rejected');
-                  setGatekeeperReason(updates.evaluator_reasoning);
+                  setGatekeeperReason(reason);
                 } else {
-                  finalIsMatch = true;
-                  finalReasoning = updates.evaluator_reasoning;
+                  // Valid RFP — advance to Researcher step
+                  setActiveStepIndex(1);
                 }
-              }
-              
-              if (node === 'drafter') {
-                setProposal(updates.current_draft);
-                finalDraft = updates.current_draft;
-              }
+                // Don't fall through to the generic map below
+              } else {
+                // For all other nodes, advance the progress indicator normally
+                if (nodeToStepMap[node] !== undefined) {
+                  setActiveStepIndex(nodeToStepMap[node]);
+                }
 
-              if (node === 'reviewer') {
-                if (updates.review_feedback === 'PASS') {
-                  setStatus('success');
-                } else if (status !== 'rejected') {
-                  // If reviewer fails and we aren't already rejected, stay in processing 
-                  // or show feedback if we hit max revisions
+                // Specific Node handling
+                if (node === 'evaluator') {
+                  if (updates.is_match === false) {
+                    finalIsMatch = false;
+                    finalReasoning = updates.evaluator_reasoning;
+                    setStatus('rejected');
+                    setGatekeeperReason(updates.evaluator_reasoning);
+                  } else {
+                    finalIsMatch = true;
+                    finalReasoning = updates.evaluator_reasoning;
+                  }
+                }
+
+                if (node === 'drafter') {
+                  setProposal(updates.current_draft);
+                  finalDraft = updates.current_draft;
+                }
+
+                if (node === 'reviewer') {
+                  if (updates.review_feedback === 'PASS') {
+                    setStatus('success');
+                  }
                 }
               }
             }
             else if (data.event === 'done') {
               // Final check if we completed successfully
               // addToHistory after streaming is fully complete
-              addToHistory({ 
-                title: selectedFile.name, 
-                original_text: extractedRfpText, 
-                status: finalIsMatch && finalDraft ? 'Drafted' : 'Rejected', 
-                is_match: finalIsMatch, 
-                reasoning: finalReasoning, 
-                final_draft: finalDraft || null 
+              addToHistory({
+                title: selectedFile.name,
+                original_text: extractedRfpText,
+                status: finalIsMatch && finalDraft ? 'Drafted' : 'Rejected',
+                is_match: finalIsMatch,
+                reasoning: finalReasoning,
+                final_draft: finalDraft || null
               });
             }
           } catch (e) {
@@ -280,7 +295,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="container mx-auto px-6 py-10">
+      <main className="container mx-auto px-5 sm:px-6 py-10">
 
         {/* --- VIEW 1: DASHBOARD --- */}
         {activeTab === 'dashboard' && (
@@ -427,7 +442,7 @@ export default function Dashboard() {
             <div className="lg:col-span-4 lg:border-r border-border lg:pr-6 space-y-4">
               <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground px-2">Session Log</h3>
               <ScrollArea className="h-[700px] w-full">
-                <div className="space-y-3 px-2">
+                <div className="space-y-3 px-0 sm:px-2">
                   {history.map(item => (
                     <div
                       key={item.id}
