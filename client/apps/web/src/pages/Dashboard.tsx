@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import {
   UploadCloud, FileText, Search, ShieldAlert, PenTool,
   CheckCircle, XCircle, Copy, Loader2, Check, History, LayoutDashboard, Clock, ExternalLink,
-  Sun, Moon, ChevronDown, ChevronUp
+  Sun, Moon, ChevronDown, ChevronUp, ArrowLeft, Files
 } from 'lucide-react';
 
 import { useTheme } from "@/components/theme-provider";
@@ -28,6 +28,22 @@ interface HistoryItem {
   final_draft: string | null;
 }
 
+interface BatchJob {
+  id: string;
+  filename: string;
+  /** idle = queued, processing = running, success = drafted, rejected = gatekeeper veto */
+  status: 'idle' | 'processing' | 'success' | 'rejected';
+  is_match: boolean;
+  is_valid_rfp: boolean;
+  document_type: string;
+  reasoning: string;
+  final_draft: string | null;
+  // For single-file streaming — stepper state
+  activeStepIndex: number;
+  gatekeeperReason: string;
+  proposal: string;
+}
+
 const STEPS = [
   { id: 'extractor', label: 'Extractor', icon: FileText },
   { id: 'researcher', label: 'Researcher', icon: Search },
@@ -36,18 +52,29 @@ const STEPS = [
   { id: 'reviewer', label: 'Reviewer', icon: CheckCircle },
 ];
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+function makeBatchJob(file: File): BatchJob {
+  return {
+    id: Math.random().toString(36).substr(2, 9),
+    filename: file.name,
+    status: 'idle',
+    is_match: false,
+    is_valid_rfp: false,
+    document_type: '',
+    reasoning: '',
+    final_draft: null,
+    activeStepIndex: -1,
+    gatekeeperReason: '',
+    proposal: '',
+  };
+}
+
 export default function Dashboard() {
-  // --- STATE ---
+  // --- GLOBAL STATE ---
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'rejected'>('idle');
-  const [activeStepIndex, setActiveStepIndex] = useState(-1);
-  const [gatekeeperReason, setGatekeeperReason] = useState('');
-  const [proposal, setProposal] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [isLogsExpanded, setIsLogsExpanded] = useState(true);
   const { theme, setTheme } = useTheme();
 
-  // History State
+  // History
   const [history, setHistory] = useState<HistoryItem[]>([
     {
       id: '1',
@@ -71,14 +98,28 @@ export default function Dashboard() {
     }
   ]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isLogsExpanded, setIsLogsExpanded] = useState(true);
 
+  // --- FILE + BATCH STATE ---
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  // batchMode = true when 2+ files are selected/running
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchJobs, setBatchJobs] = useState<BatchJob[]>([]);
+  // Which job is being drilled-down into (batch)
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  // Overall batch running state
+  const [batchRunning, setBatchRunning] = useState(false);
+
+  // --- SINGLE FILE STATE (for backwards-compat with stepper) ---
+  const [singleJob, setSingleJob] = useState<BatchJob | null>(null);
 
   // --- HANDLERS ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+      setSelectedFiles(Array.from(e.target.files));
     }
   };
 
@@ -99,16 +140,13 @@ export default function Dashboard() {
     setHistory(prev => [newItem, ...prev]);
   };
 
-  const runEvaluation = async () => {
-    if (!selectedFile) return;
+  // ─── SINGLE FILE (streaming) ─────────────────────────────────────────────
+  const runSingleEvaluation = async (file: File) => {
+    const job = makeBatchJob(file);
+    job.status = 'processing';
+    job.activeStepIndex = 0;
+    setSingleJob({ ...job });
 
-    // Reset UI for fresh run
-    setStatus('processing');
-    setActiveStepIndex(0); // Show first step as active
-    setGatekeeperReason('');
-    setProposal('');
-
-    // We'll track these to update history at the very end
     let finalIsMatch = false;
     let finalDraft = '';
     let finalReasoning = '';
@@ -116,7 +154,7 @@ export default function Dashboard() {
 
     try {
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      formData.append('file', file);
 
       const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
         method: 'POST',
@@ -129,7 +167,6 @@ export default function Dashboard() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      // MAPPING: node_name -> activeStepIndex for the NEXT step
       const nodeToStepMap: Record<string, number> = {
         'extractor': 1,
         'researcher': 2,
@@ -144,13 +181,12 @@ export default function Dashboard() {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // Keep the last partial line in buffer
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
             const data = JSON.parse(line);
-            console.log("Stream Event:", data);
 
             if (data.event === 'init') {
               extractedRfpText = data.rfp_text;
@@ -158,35 +194,26 @@ export default function Dashboard() {
             else if (data.event === 'node_update') {
               const { node, updates } = data;
 
-              // --- EXTRACTOR: check classification result first ---
               if (node === 'extractor') {
                 if (updates.is_valid_rfp === false) {
-                  // Keep activeStepIndex at 0 so Extractor shows as the FAILED step
-                  setActiveStepIndex(0);
                   const docType = updates.document_type || 'Unknown Document';
                   const reason = `Document Error: This appears to be a '${docType}', not a valid Job RFP or Freelance Gig description. Please upload a proper RFP or job posting for evaluation.`;
                   finalIsMatch = false;
                   finalReasoning = reason;
-                  setStatus('rejected');
-                  setGatekeeperReason(reason);
+                  setSingleJob(prev => prev ? { ...prev, status: 'rejected', activeStepIndex: 0, gatekeeperReason: reason } : prev);
                 } else {
-                  // Valid RFP — advance to Researcher step
-                  setActiveStepIndex(1);
+                  setSingleJob(prev => prev ? { ...prev, activeStepIndex: 1 } : prev);
                 }
-                // Don't fall through to the generic map below
               } else {
-                // For all other nodes, advance the progress indicator normally
                 if (nodeToStepMap[node] !== undefined) {
-                  setActiveStepIndex(nodeToStepMap[node]);
+                  setSingleJob(prev => prev ? { ...prev, activeStepIndex: nodeToStepMap[node] } : prev);
                 }
 
-                // Specific Node handling
                 if (node === 'evaluator') {
                   if (updates.is_match === false) {
                     finalIsMatch = false;
                     finalReasoning = updates.evaluator_reasoning;
-                    setStatus('rejected');
-                    setGatekeeperReason(updates.evaluator_reasoning);
+                    setSingleJob(prev => prev ? { ...prev, status: 'rejected', gatekeeperReason: updates.evaluator_reasoning } : prev);
                   } else {
                     finalIsMatch = true;
                     finalReasoning = updates.evaluator_reasoning;
@@ -194,22 +221,18 @@ export default function Dashboard() {
                 }
 
                 if (node === 'drafter') {
-                  setProposal(updates.current_draft);
+                  setSingleJob(prev => prev ? { ...prev, proposal: updates.current_draft } : prev);
                   finalDraft = updates.current_draft;
                 }
 
-                if (node === 'reviewer') {
-                  if (updates.review_feedback === 'PASS') {
-                    setStatus('success');
-                  }
+                if (node === 'reviewer' && updates.review_feedback === 'PASS') {
+                  setSingleJob(prev => prev ? { ...prev, status: 'success' } : prev);
                 }
               }
             }
             else if (data.event === 'done') {
-              // Final check if we completed successfully
-              // addToHistory after streaming is fully complete
               addToHistory({
-                title: selectedFile.name,
+                title: file.name,
                 original_text: extractedRfpText,
                 status: finalIsMatch && finalDraft ? 'Drafted' : 'Rejected',
                 is_match: finalIsMatch,
@@ -224,12 +247,309 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error("Evaluation error:", err);
-      setStatus('rejected');
-      setGatekeeperReason("Connection Failed or streaming interrupted.");
+      setSingleJob(prev => prev ? {
+        ...prev, status: 'rejected',
+        gatekeeperReason: "Connection Failed or streaming interrupted."
+      } : prev);
     }
   };
 
+  // ─── BATCH JOB STATE UPDATE HELPER ─────────────────────────────────────
+  const updateBatchJob = (id: string, updater: (j: BatchJob) => BatchJob) => {
+    setBatchJobs(prev => prev.map(j => j.id === id ? updater(j) : j));
+  };
+
+  // ─── STREAM ONE JOB (used inside batch mode per-file) ───────────────────
+  const streamSingleBatchJob = async (file: File, jobId: string) => {
+    const nodeToStepMap: Record<string, number> = {
+      'extractor': 1, 'researcher': 2, 'evaluator': 3, 'drafter': 4, 'reviewer': 5
+    };
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let extractedRfpText = '';
+      let finalIsMatch = false;
+      let finalDraft = '';
+      let finalReasoning = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+
+            if (data.event === 'init') {
+              extractedRfpText = data.rfp_text;
+            } else if (data.event === 'node_update') {
+              const { node, updates } = data;
+
+              if (node === 'extractor') {
+                if (updates.is_valid_rfp === false) {
+                  const docType = updates.document_type || 'Unknown Document';
+                  const reason = `Document Error: This appears to be a '${docType}', not a valid Job RFP or Freelance Gig description.`;
+                  finalIsMatch = false;
+                  finalReasoning = reason;
+                  updateBatchJob(jobId, j => ({ ...j, status: 'rejected', activeStepIndex: 0, gatekeeperReason: reason, reasoning: reason }));
+                } else {
+                  updateBatchJob(jobId, j => ({ ...j, activeStepIndex: 1 }));
+                }
+              } else {
+                if (nodeToStepMap[node] !== undefined) {
+                  updateBatchJob(jobId, j => ({ ...j, activeStepIndex: nodeToStepMap[node] }));
+                }
+                if (node === 'evaluator') {
+                  if (updates.is_match === false) {
+                    finalIsMatch = false;
+                    finalReasoning = updates.evaluator_reasoning;
+                    updateBatchJob(jobId, j => ({ ...j, status: 'rejected', gatekeeperReason: updates.evaluator_reasoning, reasoning: updates.evaluator_reasoning }));
+                  } else {
+                    finalIsMatch = true;
+                    finalReasoning = updates.evaluator_reasoning;
+                  }
+                }
+                if (node === 'drafter') {
+                  finalDraft = updates.current_draft;
+                  updateBatchJob(jobId, j => ({ ...j, proposal: updates.current_draft }));
+                }
+                if (node === 'reviewer' && updates.review_feedback === 'PASS') {
+                  updateBatchJob(jobId, j => ({ ...j, status: 'success' }));
+                }
+              }
+            } else if (data.event === 'done') {
+              updateBatchJob(jobId, j => ({ ...j, final_draft: finalDraft || null, is_match: finalIsMatch }));
+              addToHistory({
+                title: file.name,
+                original_text: extractedRfpText,
+                status: finalIsMatch && finalDraft ? 'Drafted' : 'Rejected',
+                is_match: finalIsMatch,
+                reasoning: finalReasoning,
+                final_draft: finalDraft || null,
+              });
+            }
+          } catch (e) {
+            console.error('Batch stream parse error:', e);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Batch error for ${file.name}:`, err);
+      updateBatchJob(jobId, j => ({
+        ...j, status: 'rejected',
+        gatekeeperReason: 'Connection failed or streaming interrupted.',
+        reasoning: 'Connection failed or streaming interrupted.',
+      }));
+    }
+  };
+
+  // ─── BATCH (parallel streaming, staggered to avoid rate limits) ─────────
+  const runBatchEvaluation = async (files: File[]) => {
+    // Build initial job cards — all 'processing' from the start
+    const jobs: BatchJob[] = files.map(f => ({ ...makeBatchJob(f), status: 'processing', activeStepIndex: 0 }));
+    setBatchJobs(jobs);
+    setBatchRunning(true);
+
+    // Fire N parallel streams, staggered 400ms apart to avoid burst rate-limit errors
+    await Promise.all(
+      files.map((file, idx) => {
+        const jobId = jobs[idx].id;
+        return new Promise<void>(resolve =>
+          setTimeout(() => streamSingleBatchJob(file, jobId).then(resolve), idx * 400)
+        );
+      })
+    );
+
+    setBatchRunning(false);
+  };
+
+  // ─── MAIN ENTRY ─────────────────────────────────────────────────────────
+  const runEvaluation = () => {
+    if (selectedFiles.length === 0) return;
+
+    if (selectedFiles.length === 1) {
+      setBatchMode(false);
+      setSingleJob(null);
+      runSingleEvaluation(selectedFiles[0]);
+    } else {
+      setBatchMode(true);
+      setSelectedJobId(null);
+      runBatchEvaluation(selectedFiles);
+    }
+  };
+
+  const resetToIdle = () => {
+    setSingleJob(null);
+    setBatchMode(false);
+    setBatchJobs([]);
+    setSelectedJobId(null);
+    setSelectedFiles([]);
+  };
+
+  // ─── DERIVED ────────────────────────────────────────────────────────────
   const selectedHistory = history.find(h => h.id === selectedHistoryId);
+  const selectedBatchJob = batchJobs.find(j => j.id === selectedJobId);
+  const singleStatus = singleJob?.status ?? 'idle';
+  const isIdle = !batchMode && singleStatus === 'idle';
+
+  // ─── BADGE HELPERS ──────────────────────────────────────────────────────
+  const statusBadge = (status: BatchJob['status']) => {
+    if (status === 'processing') return <Badge variant="outline" className="text-[9px] border-primary/50 text-primary animate-pulse gap-1"><Loader2 className="h-2.5 w-2.5 animate-spin" />Processing</Badge>;
+    if (status === 'success') return <Badge variant="outline" className="text-[9px] border-emerald-500/50 text-emerald-500">✅ Drafted</Badge>;
+    if (status === 'rejected') return <Badge variant="outline" className="text-[9px] border-destructive/50 text-destructive">❌ Rejected</Badge>;
+    return <Badge variant="outline" className="text-[9px] border-border text-muted-foreground">Queued</Badge>;
+  };
+
+  // ─── STEPPER (shared between single and drill-down) ──────────────────────
+  const renderStepper = (job: BatchJob) => (
+    <div className="relative border-l border-border ml-4 md:ml-6 space-y-8 md:space-y-10 py-2">
+      {STEPS.map((step, index) => {
+        const Icon = step.icon;
+        const isPast = job.activeStepIndex > index || job.status === 'success' || (job.status === 'rejected' && job.activeStepIndex > index);
+        const isCurrent = job.activeStepIndex === index && job.status === 'processing';
+        const isFailed = job.status === 'rejected' && job.activeStepIndex === index;
+
+        return (
+          <div key={step.id} className="relative pl-8 md:pl-10">
+            <span className={`absolute -left-[17px] p-1.5 md:p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
+              ${isPast ? 'border-emerald-500 text-emerald-500' :
+                isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-110 md:scale-125' :
+                  isFailed ? 'border-destructive text-destructive' : 'border-border text-muted-foreground opacity-50'}
+            `}>
+              {isCurrent ? <Loader2 className="h-3 w-3 md:h-4 md:w-4 animate-spin" /> : isPast ? <CheckCircle className="h-3 w-3 md:h-4 md:w-4" /> : <Icon className="h-3 w-3 md:h-4 md:w-4" />}
+            </span>
+            <div className="flex flex-col">
+              <span className={`text-[9px] md:text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
+                Node: {step.label}
+              </span>
+              <span className={`text-[12px] md:text-sm mt-0.5 md:mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+                {isCurrent ? 'Agent executing decision logic...' : isPast ? 'Task verified.' : isFailed ? 'Workflow Terminated.' : 'Pending activation...'}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // ─── DETAIL PANEL (shared between single and drill-down) ─────────────────
+  const renderDetailPanel = (job: BatchJob) => (
+    <div className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full max-h-[5000px] lg:max-h-none opacity-100 lg:ml-8 pb-10`}>
+      <div className="flex items-center justify-between px-2 cursor-pointer lg:cursor-default" onClick={() => window.innerWidth < 1024 && setIsLogsExpanded(!isLogsExpanded)}>
+        <div className="flex items-center gap-3">
+          <h2 className="text-[10px] md:text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
+          <div className="lg:hidden text-muted-foreground">
+            {isLogsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {job.status === 'processing' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-primary/50 text-primary animate-pulse">Running</Badge>}
+          {job.status === 'success' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-emerald-500/50 text-emerald-500">Success</Badge>}
+          {job.status === 'rejected' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-destructive/50 text-destructive">Halted</Badge>}
+        </div>
+      </div>
+
+      <div className={`space-y-8 md:space-y-12 animate-in fade-in slide-in-from-right-5 duration-500 transition-all ${!isLogsExpanded && 'hidden lg:block'}`}>
+        {renderStepper(job)}
+
+        {job.status === 'rejected' && (
+          <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-4 md:py-8 px-4 md:px-8 rounded-xl md:rounded-2xl animate-in zoom-in-95">
+            <XCircle className="h-4 w-4 md:h-5 md:w-5" />
+            <AlertTitle className="text-xs md:text-sm font-bold mb-2 uppercase tracking-widest">Gatekeeper Veto</AlertTitle>
+            <AlertDescription className="text-[11px] md:text-sm italic opacity-90 leading-relaxed">
+              "{job.gatekeeperReason}"
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {job.status === 'success' && (
+          <Card className="bg-card border-border rounded-xl md:rounded-2xl overflow-hidden shadow-sm animate-in zoom-in-95 duration-500">
+            <div className="bg-muted/50 px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-border">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-emerald-500" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Generated Response</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => handleCopy(job.proposal)} className="h-8 gap-2 text-xs w-full md:w-auto justify-start md:justify-center">
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copied" : "Copy Draft"}
+              </Button>
+            </div>
+            <div className="p-4 md:p-8 text-[11px] md:text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
+              {job.proposal}
+            </div>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── UPLOAD SIDEBAR ──────────────────────────────────────────────────────
+  const renderUploadCard = (compact = false) => (
+    <div className={`transition-all duration-700 ease-in-out flex-shrink-0 space-y-6 z-10 w-full mb-8 lg:mb-0 ${compact ? 'max-w-full lg:max-w-sm' : 'max-w-md mx-auto lg:mx-0'}`}>
+      <Card className="bg-card border-border shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg md:text-xl">Upload RFP</CardTitle>
+          <CardDescription className="text-xs md:text-sm text-muted-foreground pt-1">
+            Provide one or more PDF job descriptions to begin.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div
+            onClick={triggerUpload}
+            className="group border-2 border-dashed border-border rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
+          >
+            {selectedFiles.length > 1
+              ? <Files className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
+              : <UploadCloud className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
+            }
+            <div className="text-center">
+              <p className="text-xs md:text-sm font-bold text-foreground">
+                {selectedFiles.length === 0
+                  ? "Choose PDF File(s)"
+                  : selectedFiles.length === 1
+                    ? selectedFiles[0].name
+                    : `${selectedFiles.length} files selected`}
+              </p>
+              <p className="text-[10px] md:text-xs text-muted-foreground mt-1">Maximum size: 50MB each</p>
+            </div>
+            <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" multiple />
+          </div>
+
+          <div className="flex flex-col gap-3 pt-2">
+            <Button
+              onClick={runEvaluation}
+              disabled={selectedFiles.length === 0 || batchRunning || (!batchMode && singleStatus === 'processing')}
+              className="bg-primary text-primary-foreground font-bold h-10 md:h-12 shadow-sm text-sm"
+            >
+              {(batchRunning || (!batchMode && singleStatus === 'processing'))
+                ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Analyzing...</>
+                : selectedFiles.length > 1 ? `Analyze ${selectedFiles.length} RFPs` : "Analyze RFP"}
+            </Button>
+            {(batchMode || singleStatus !== 'idle') && (
+              <Button variant="ghost" size="sm" onClick={resetToIdle} className="text-muted-foreground text-xs h-8">
+                ↩ Start over
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30">
@@ -237,7 +557,6 @@ export default function Dashboard() {
       {/* --- TOP NAVIGATION --- */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 md:px-6">
-          {/* Main Row: Logo and Actions */}
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-1">
               <div className="h-8 w-8 md:h-10 md:w-10 flex items-center justify-center">
@@ -297,144 +616,138 @@ export default function Dashboard() {
 
       <main className="container mx-auto px-5 sm:px-6 py-10">
 
-        {/* --- VIEW 1: DASHBOARD --- */}
+        {/* ══════════════════════════════════════════════════════════════════
+            VIEW: DASHBOARD
+        ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'dashboard' && (
-          <div className={`flex flex-col lg:flex-row w-full overflow-hidden transition-all duration-700 ${status === 'idle' ? 'lg:items-center min-h-[60vh]' : 'items-start'}`}>
+          <>
+            {/* ── IDLE / SINGLE-FILE MODE ─────────────────────────────── */}
+            {!batchMode && (
+              <div className={`flex flex-col lg:flex-row w-full overflow-hidden transition-all duration-700 ${isIdle ? 'lg:items-center min-h-[60vh]' : 'items-start'}`}>
 
-            {/* SMOOTH CENTERING SPACER (Desktop only) */}
-            <div
-              className="transition-[width] duration-700 ease-in-out flex-shrink-0 hidden lg:block"
-              style={{ width: status === 'idle' ? 'calc(50% - 224px)' : '0px' }}
-            />
+                {/* SMOOTH CENTERING SPACER (Desktop only) */}
+                <div
+                  className="transition-[width] duration-700 ease-in-out flex-shrink-0 hidden lg:block"
+                  style={{ width: isIdle ? 'calc(50% - 224px)' : '0px' }}
+                />
 
-            {/* INPUT SIDEBAR */}
-            <div
-              className={`transition-all duration-700 ease-in-out flex-shrink-0 space-y-6 z-10 w-full mb-8 lg:mb-0
-                ${status === 'idle' ? 'max-w-md mx-auto lg:mx-0' : 'max-w-full lg:max-w-sm'}
-              `}
-            >
-              <Card className="bg-card border-border shadow-sm">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg md:text-xl">Upload RFP</CardTitle>
-                  <CardDescription className="text-xs md:text-sm text-muted-foreground pt-1">Provide a PDF job description to begin.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div
-                    onClick={triggerUpload}
-                    className="group border-2 border-dashed border-border rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
-                  >
-                    <UploadCloud className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <div className="text-center">
-                      <p className="text-xs md:text-sm font-bold text-foreground">
-                        {selectedFile ? selectedFile.name : "Choose PDF File"}
-                      </p>
-                      <p className="text-[10px] md:text-xs text-muted-foreground mt-1">Maximum size: 50MB</p>
-                    </div>
-                    <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" />
-                  </div>
+                {renderUploadCard(!isIdle)}
 
-                  <div className="flex flex-col gap-3 pt-2">
-                    <Button
-                      onClick={() => runEvaluation()}
-                      disabled={!selectedFile || status === 'processing'}
-                      className="bg-primary text-primary-foreground font-bold h-10 md:h-12 shadow-sm text-sm"
-                    >
-                      {status === 'processing' ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Analyzing...</> : "Analyze RFP"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* MAIN STAGE (THE BRAIN) */}
-            <div
-              className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full
-                ${status === 'idle'
-                  ? 'max-h-0 lg:max-h-none lg:max-w-0 opacity-0 ml-0 pointer-events-none'
-                  : 'max-h-[5000px] lg:max-h-none lg:max-w-5xl opacity-100 lg:ml-8 pb-10'
-                }
-              `}
-            >
-              <div className="flex items-center justify-between px-2 cursor-pointer lg:cursor-default" onClick={() => window.innerWidth < 1024 && setIsLogsExpanded(!isLogsExpanded)}>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-[10px] md:text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
-                  <div className="lg:hidden text-muted-foreground">
-                    {isLogsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  {status === 'processing' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-primary/50 text-primary animate-pulse">Running</Badge>}
-                  {status === 'success' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-emerald-500/50 text-emerald-500">Success</Badge>}
-                  {status === 'rejected' && <Badge variant="outline" className="text-[9px] md:text-[10px] border-destructive/50 text-destructive">Halted</Badge>}
+                {/* MAIN STAGE */}
+                <div className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full
+                  ${isIdle
+                    ? 'max-h-0 lg:max-h-none lg:max-w-0 opacity-0 ml-0 pointer-events-none'
+                    : 'max-h-[5000px] lg:max-h-none lg:max-w-5xl opacity-100 lg:ml-8 pb-10'
+                  }
+                `}>
+                  {singleJob && renderDetailPanel(singleJob)}
                 </div>
               </div>
+            )}
 
-              <div className={`space-y-8 md:space-y-12 animate-in fade-in slide-in-from-right-5 duration-500 transition-all ${!isLogsExpanded && 'hidden lg:block'}`}>
+            {/* ── BATCH MODE ──────────────────────────────────────────── */}
+            {batchMode && (
+              <div className="space-y-8">
 
-                {/* STEPPER */}
-                <div className="relative border-l border-border ml-4 md:ml-6 space-y-8 md:space-y-10 py-2">
-                  {STEPS.map((step, index) => {
-                    const Icon = step.icon;
-                    const isPast = activeStepIndex > index || status === 'success' || (status === 'rejected' && activeStepIndex > index);
-                    const isCurrent = activeStepIndex === index && status === 'processing';
-                    const isFailed = status === 'rejected' && activeStepIndex === index;
+                {/* ── VIEW B: DRILL-DOWN ── */}
+                {selectedJobId && selectedBatchJob && (
+                  <div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mb-6 gap-2 text-muted-foreground hover:text-foreground -ml-2"
+                      onClick={() => setSelectedJobId(null)}
+                    >
+                      <ArrowLeft className="h-4 w-4" /> Back to Batch Overview
+                    </Button>
 
-                    return (
-                      <div key={step.id} className="relative pl-8 md:pl-10">
-                        <span className={`absolute -left-[17px] p-1.5 md:p-2 rounded-full border bg-background transition-all duration-500 flex items-center justify-center
-                          ${isPast ? 'border-emerald-500 text-emerald-500' :
-                            isCurrent ? 'border-primary text-primary shadow-[0_0_15px_rgba(var(--primary),0.5)] scale-110 md:scale-125' :
-                              isFailed ? 'border-destructive text-destructive' : 'border-border text-muted-foreground opacity-50'}
-                        `}>
-                          {isCurrent ? <Loader2 className="h-3 w-3 md:h-4 md:w-4 animate-spin" /> : isPast ? <CheckCircle className="h-3 w-3 md:h-4 md:w-4" /> : <Icon className="h-3 w-3 md:h-4 md:w-4" />}
-                        </span>
-                        <div className="flex flex-col">
-                          <span className={`text-[9px] md:text-[10px] uppercase font-bold tracking-[0.2em] ${isCurrent ? 'text-primary' : isPast ? 'text-emerald-500' : isFailed ? 'text-destructive' : 'text-muted-foreground opacity-50'}`}>
-                            Node: {step.label}
-                          </span>
-                          <span className={`text-[12px] md:text-sm mt-0.5 md:mt-1 ${isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
-                            {isCurrent ? 'Agent executing decision logic...' : isPast ? 'Task verified.' : isFailed ? 'Workflow Terminated.' : 'Pending activation...'}
-                          </span>
+                    <p className="text-xs text-muted-foreground font-mono mb-6 truncate">{selectedBatchJob.filename}</p>
+
+                    <div className="flex flex-col lg:flex-row gap-8 items-start">
+                      {renderUploadCard(true)}
+                      {renderDetailPanel(selectedBatchJob)}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── VIEW A: BATCH OVERVIEW GRID ── */}
+                {!selectedJobId && (
+                  <div className="space-y-8">
+                    {/* UPLOAD CARD + SUMMARY ROW */}
+                    <div className="flex flex-col lg:flex-row gap-8 items-start">
+                      {renderUploadCard(true)}
+
+                      {/* Batch summary panel */}
+                      <div className="flex-1 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h2 className="text-sm font-bold tracking-[0.15em] uppercase text-muted-foreground">Batch Overview</h2>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {batchRunning
+                                ? `Processing ${batchJobs.length} document${batchJobs.length > 1 ? 's' : ''}...`
+                                : `${batchJobs.filter(j => j.status === 'success').length} drafted · ${batchJobs.filter(j => j.status === 'rejected').length} rejected`}
+                            </p>
+                          </div>
+                          {batchRunning && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+                        </div>
+
+                        {/* BATCH PROGRESS BAR */}
+                        {batchRunning && (
+                          <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-all duration-500 animate-pulse"
+                              style={{ width: `${(batchJobs.filter(j => j.status !== 'processing' && j.status !== 'idle').length / batchJobs.length) * 100}%` }}
+                            />
+                          </div>
+                        )}
+
+                        {/* JOB CARDS GRID */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {batchJobs.map(job => (
+                            <div
+                              key={job.id}
+                              onClick={() => setSelectedJobId(job.id)}
+                              className={`group p-4 rounded-xl border transition-all duration-300 cursor-pointer hover:border-primary/50 hover:bg-muted/30
+                                ${job.status === 'success' ? 'border-l-4 border-l-emerald-500 border-border' : ''}
+                                ${job.status === 'rejected' ? 'border-l-4 border-l-destructive border-border' : ''}
+                                ${job.status === 'processing' || job.status === 'idle' ? 'border-border' : ''}
+                              `}
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-3">
+                                <div className={`p-2 rounded-lg bg-muted/50 flex-shrink-0 ${job.status === 'processing' ? 'animate-pulse' : ''}`}>
+                                  {job.status === 'processing'
+                                    ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                                    : job.status === 'success'
+                                      ? <CheckCircle className="h-4 w-4 text-emerald-500" />
+                                      : <XCircle className="h-4 w-4 text-destructive" />
+                                  }
+                                </div>
+                                {statusBadge(job.status)}
+                              </div>
+                              <p className="text-xs font-bold truncate text-foreground">{job.filename}</p>
+                              {job.status !== 'processing' && job.status !== 'idle' && (
+                                <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed line-clamp-2 italic">
+                                  {job.reasoning || 'No reasoning provided.'}
+                                </p>
+                              )}
+                              {(job.status === 'success' || job.status === 'rejected') && (
+                                <p className="text-[9px] text-primary/70 mt-2 font-medium">Click to view details →</p>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* RESULTS */}
-                {status === 'rejected' && (
-                  <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-4 md:py-8 px-4 md:px-8 rounded-xl md:rounded-2xl animate-in zoom-in-95">
-                    <XCircle className="h-4 w-4 md:h-5 md:w-5" />
-                    <AlertTitle className="text-xs md:text-sm font-bold mb-2 uppercase tracking-widest">Gatekeeper Veto</AlertTitle>
-                    <AlertDescription className="text-[11px] md:text-sm italic opacity-90 leading-relaxed">
-                      "{gatekeeperReason}"
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {status === 'success' && (
-                  <Card className="bg-card border-border rounded-xl md:rounded-2xl overflow-hidden shadow-sm animate-in zoom-in-95 duration-500">
-                    <div className="bg-muted/50 px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-border">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-emerald-500" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Generated Response</span>
-                      </div>
-                      <Button variant="ghost" size="sm" onClick={() => handleCopy(proposal)} className="h-8 gap-2 text-xs w-full md:w-auto justify-start md:justify-center">
-                        {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                        {copied ? "Copied" : "Copy Draft"}
-                      </Button>
                     </div>
-                    <div className="p-4 md:p-8 text-[11px] md:text-sm leading-relaxed whitespace-pre-wrap text-card-foreground">
-                      {proposal}
-                    </div>
-                  </Card>
+                  </div>
                 )}
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
-        {/* --- VIEW 2: HISTORY --- */}
+        {/* ══════════════════════════════════════════════════════════════════
+            VIEW: HISTORY
+        ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'history' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 min-h-[600px]">
 
@@ -518,7 +831,7 @@ export default function Dashboard() {
 
                     <TabsContent value="input" className="p-8">
                       <div className="p-8 rounded-xl bg-muted/30 border border-border text-xs leading-relaxed font-mono whitespace-pre-wrap text-muted-foreground min-h-[300px]">
-                        {selectedHistory.original_text}
+                        {selectedHistory.original_text || 'Source text not captured for this entry.'}
                       </div>
                     </TabsContent>
                   </Tabs>

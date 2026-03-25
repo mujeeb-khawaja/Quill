@@ -1,8 +1,12 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from mangum import Mangum
 import pdfplumber
 import io
+import json
+import asyncio
+from typing import List
 
 # Import the pre-built, working LangGraph logic
 from src.agent_graph import build_graph
@@ -35,8 +39,12 @@ def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
         print(f"Error reading PDF bytes: {e}")
     return text
 
-import json
 from fastapi.responses import StreamingResponse
+
+# --- CONCURRENCY LIMITER ---
+# Caps parallel LLM pipeline calls to 3 to prevent rate-limit (HTTP 429) errors
+# on free-tier APIs (Groq, Gemini). Raise to 4-5 if on a paid tier.
+BATCH_SEMAPHORE = asyncio.Semaphore(3)
 
 @app.post("/api/evaluate-rfp")
 async def evaluate_rfp(file: UploadFile = File(...)):
@@ -94,7 +102,81 @@ async def evaluate_rfp(file: UploadFile = File(...)):
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
+
+# --- BATCH ENDPOINT ---
+async def _process_single_file(file: UploadFile) -> dict:
+    """Processes one file through the full LangGraph pipeline (async, non-streaming).
+    The BATCH_SEMAPHORE ensures at most 3 of these run concurrently."""
+    async with BATCH_SEMAPHORE:
+        filename = file.filename
+        print(f"\n[BATCH] Starting: {filename}")
+
+        file_bytes = await file.read()
+        rfp_text = extract_text_from_pdf_bytes(file_bytes)
+
+        if len(rfp_text.strip()) < 10:
+            print(f"[BATCH] Skipping {filename}: not enough text.")
+            return {
+                "filename": filename,
+                "is_match": False,
+                "is_valid_rfp": False,
+                "document_type": "Unreadable PDF",
+                "evaluator_reasoning": "Failed to extract readable text from this PDF.",
+                "current_draft": None,
+            }
+
+        initial_state = {
+            "rfp_text": rfp_text,
+            "document_type": "",
+            "is_valid_rfp": False,
+            "requirements": [],
+            "cv_context": "",
+            "is_match": False,
+            "evaluator_reasoning": "",
+            "current_draft": "",
+            "review_feedback": "",
+            "revision_count": 0,
+        }
+
+        try:
+            final_state = await graph.ainvoke(initial_state)
+            print(f"[BATCH] Finished: {filename} | match={final_state.get('is_match')}")
+            return {
+                "filename": filename,
+                "is_match": final_state.get("is_match", False),
+                "is_valid_rfp": final_state.get("is_valid_rfp", False),
+                "document_type": final_state.get("document_type", ""),
+                "evaluator_reasoning": final_state.get("evaluator_reasoning", ""),
+                "current_draft": final_state.get("current_draft") or None,
+            }
+        except Exception as e:
+            print(f"[BATCH] Error on {filename}: {e}")
+            return {
+                "filename": filename,
+                "is_match": False,
+                "is_valid_rfp": False,
+                "document_type": "Error",
+                "evaluator_reasoning": f"Pipeline error: {str(e)}",
+                "current_draft": None,
+            }
+
+
+@app.post("/api/evaluate-rfp-batch")
+async def evaluate_rfp_batch(files: List[UploadFile] = File(...)):
+    """Accepts multiple PDF files and processes them in parallel (max 3 at once).
+    Returns a JSON array of results once all jobs are complete."""
+    print(f"\n--- BATCH REQUEST RECEIVED: {len(files)} file(s) ---")
+    for f in files:
+        print(f"  - {f.filename}")
+
+    # asyncio.gather fires all tasks concurrently; BATCH_SEMAPHORE caps actual LLM calls to 3
+    results = await asyncio.gather(*[_process_single_file(f) for f in files])
+
+    print(f"\n[BATCH] All {len(files)} job(s) complete.")
+    return JSONResponse(content=list(results))
+
+
 # --- AWS LAMBDA ADAPTER ---
-# This single line converts the FastAPI application into a form 
+# This single line converts the FastAPI application into a form
 # that AWS API Gateway and Lambda understand natively.
 handler = Mangum(app)
