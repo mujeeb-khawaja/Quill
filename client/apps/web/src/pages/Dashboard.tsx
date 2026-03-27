@@ -76,28 +76,8 @@ export default function Dashboard() {
   const { theme, setTheme } = useTheme();
 
   // History
-  const [history, setHistory] = useState<HistoryItem[]>([
-    {
-      id: '1',
-      timestamp: '2024-03-23 14:20',
-      title: 'Senior AWS Architect - Fintech',
-      original_text: 'Looking for an AWS expert with deep experience in Lambda and Qdrant...',
-      status: 'Drafted',
-      is_match: true,
-      reasoning: 'Matches all core infrastructure requirements.',
-      final_draft: 'Dear Hiring Manager, I am writing to express my interest in the Senior AWS Architect position using my experience in Python and AWS CDK...'
-    },
-    {
-      id: '2',
-      timestamp: '2024-03-23 15:45',
-      title: 'SAP ABAP Specialist',
-      original_text: 'Must have 10+ years in SAP ABAP and module development.',
-      status: 'Rejected',
-      is_match: false,
-      reasoning: 'Match Failed: Lacks strictly required SAP ABAP experience.',
-      final_draft: null
-    }
-  ]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isLogsExpanded, setIsLogsExpanded] = useState(true);
@@ -123,6 +103,31 @@ export default function Dashboard() {
       localStorage.setItem('quill_user_id', userId);
     }
   }, [userId]);
+
+  // Fetch history from DynamoDB when history tab opens
+  React.useEffect(() => {
+    if (activeTab !== 'history') return;
+    setHistoryLoading(true);
+    fetch(`https://ox3qtvivf1.execute-api.eu-north-1.amazonaws.com/api/history/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const mapped: HistoryItem[] = data.map((item: any) => ({
+            id: item.timestamp,
+            timestamp: new Date(item.timestamp).toLocaleString(),
+            title: item.filename,
+            original_text: '',
+            status: item.status as 'Drafted' | 'Rejected',
+            is_match: item.is_match,
+            reasoning: item.gatekeeper_reasoning,
+            final_draft: item.final_draft || null,
+          }));
+          setHistory(mapped);
+        }
+      })
+      .catch(err => console.error('History fetch error:', err))
+      .finally(() => setHistoryLoading(false));
+  }, [activeTab, userId]);
 
   const [hasActiveCV, setHasActiveCV] = useState(false);
   const [activeCVName, setActiveCVName] = useState<string | null>(null);
@@ -181,7 +186,7 @@ export default function Dashboard() {
       if (res.ok && data.status === 'success') {
         setHasActiveCV(true);
         setActiveCVName(file.name);
-        setCvUploadSuccess(`Success! Extracted ${data.chunks_upserted} semantic chunks.`);
+        setCvUploadSuccess(`Success! Your profile has been analyzed and your AI is ready to work.`);
         setTimeout(() => setSheetOpen(false), 2000);
       } else {
         setCvUploadError(data.message || data.error || "CV Upload Failed");
@@ -674,7 +679,7 @@ export default function Dashboard() {
                   <SheetHeader className="p-6 border-b border-border bg-muted/30">
                     <SheetTitle>Manage AI Knowledge Base</SheetTitle>
                     <SheetDescription>
-                      Upload your standard CV/Resume. Quill's LLM will parse it into semantic chunks to accurately evaluate hard constraints.
+                      Upload your standard CV or Resume. Our AI will securely analyze your experience, skills, and background to automatically match you with the best jobs.
                     </SheetDescription>
                   </SheetHeader>
                   <div className="p-6 flex-1 overflow-y-auto">
@@ -684,7 +689,7 @@ export default function Dashboard() {
                         <CheckCircle className="h-4 w-4 text-emerald-500" />
                         <span className="text-emerald-500 font-bold text-sm ml-2 tracking-wide uppercase">Profile Active</span>
                         <AlertDescription className="mt-2 text-xs text-emerald-500/80">
-                          {activeCVName} is currently loaded into your Qdrant vector database. Uploading a new CV will completely replace the current knowledge base.
+                          {activeCVName} is active and acting as your AI's brain. Uploading a new document will replace your current profile.
                         </AlertDescription>
                       </Alert>
                     )}
@@ -706,10 +711,7 @@ export default function Dashboard() {
                       )}
                       <div className="text-center">
                         <p className={`text-sm font-bold ${cvUploadError ? 'text-destructive' : 'text-foreground'}`}>
-                          {cvUploading ? "Extracting Semantic Chunks..." : cvUploadError ? "Invalid Document Type" : "Upload PDF Resume"}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {cvUploading ? "Vectorizing and sending to Qdrant" : cvUploadError ? "Click to try a different file" : "Will overwrite existing data"}
+                          {cvUploading ? "Securely analyzing your experience..." : cvUploadError ? "Click to try a different file" : "Will replace your existing profile"}
                         </p>
                       </div>
                       <input
@@ -911,6 +913,18 @@ export default function Dashboard() {
               <h3 className="text-xs font-bold tracking-[0.2em] uppercase text-muted-foreground px-2">Session Log</h3>
               <ScrollArea className="h-[700px] w-full">
                 <div className="space-y-3 px-0 sm:px-2">
+                  {historyLoading && (
+                    <div className="flex items-center justify-center py-20 text-muted-foreground">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading history...
+                    </div>
+                  )}
+                  {!historyLoading && history.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground opacity-40">
+                      <History className="h-10 w-10 mb-3" />
+                      <p className="text-xs uppercase tracking-widest font-bold">No evaluations yet</p>
+                      <p className="text-[10px] mt-1">Run an RFP evaluation to see history here.</p>
+                    </div>
+                  )}
                   {history.map(item => (
                     <div
                       key={item.id}
