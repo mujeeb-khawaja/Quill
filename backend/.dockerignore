@@ -1,0 +1,14 @@
+# Exclude heavy local folders to speed up build
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.env
+
+# Exclude unnecessary logs and temp files
+*.log
+tmp/
+.vscode/
+.idea/

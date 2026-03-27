@@ -14,10 +14,11 @@ from src.cv_processor import extract_text_from_pdf_bytes, parse_cv_to_json, upse
 
 app = FastAPI(title="AutoBid AI", description="Serverless RFP Evaluator")
 
-# Allow CORS for local dev and frontend communication
+# --- CORS CONFIGURATION ---
+# In production, replace ["*"] with your actual frontend URL (e.g., Vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Restrict this to your domain in production
+    allow_origins=["*", "https://multi-agent-rfp-responder.onrender.com"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -227,6 +228,7 @@ async def upload_cv(
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # --- AWS LAMBDA ADAPTER ---
+# --- AWS LAMBDA HANDLER ---
 # This single line converts the FastAPI application into a form
-# that AWS API Gateway and Lambda understand natively.
+# that AWS API Gateway and Lambda understand natively via Mangum.
 handler = Mangum(app)
