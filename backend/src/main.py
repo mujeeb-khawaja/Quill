@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from mangum import Mangum
@@ -10,6 +10,7 @@ from typing import List
 
 # Import the pre-built, working LangGraph logic
 from src.agent_graph import build_graph
+from src.cv_processor import extract_text_from_pdf_bytes, parse_cv_to_json, upsert_cv_to_qdrant, classify_cv_document
 
 app = FastAPI(title="AutoBid AI", description="Serverless RFP Evaluator")
 
@@ -26,18 +27,9 @@ app.add_middleware(
 print("Initializing LangGraph Pipeline...")
 graph = build_graph()
 
-def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
+def extract_text(file_bytes: bytes) -> str:
     """Helper to extract text from a raw PDF byte stream."""
-    text = ""
-    try:
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-    except Exception as e:
-        print(f"Error reading PDF bytes: {e}")
-    return text
+    return extract_text_from_pdf_bytes(file_bytes)
 
 from fastapi.responses import StreamingResponse
 
@@ -47,7 +39,10 @@ from fastapi.responses import StreamingResponse
 BATCH_SEMAPHORE = asyncio.Semaphore(3)
 
 @app.post("/api/evaluate-rfp")
-async def evaluate_rfp(file: UploadFile = File(...)):
+async def evaluate_rfp(
+    file: UploadFile = File(...),
+    user_id: str = Form(...)
+):
     print(f"\n--- API REQUEST RECEIVED (STREAMING) ---")
     print(f"File Name: {file.filename}")
     
@@ -55,7 +50,7 @@ async def evaluate_rfp(file: UploadFile = File(...)):
     file_bytes = await file.read()
     
     # 2. Extract Text
-    rfp_text = extract_text_from_pdf_bytes(file_bytes)
+    rfp_text = extract_text(file_bytes)
     
     if len(rfp_text.strip()) < 10:
         return {
@@ -68,8 +63,10 @@ async def evaluate_rfp(file: UploadFile = File(...)):
     # 3. Setup Initial State for LangGraph
     initial_state = {
         "rfp_text": rfp_text,
+        "user_id": user_id,
         "document_type": "",
         "is_valid_rfp": False,
+        "hard_constraints": {},
         "requirements": [],
         "cv_context": "",
         "is_match": False,
@@ -104,7 +101,7 @@ async def evaluate_rfp(file: UploadFile = File(...)):
 
 
 # --- BATCH ENDPOINT ---
-async def _process_single_file(file: UploadFile) -> dict:
+async def _process_single_file(file: UploadFile, user_id: str) -> dict:
     """Processes one file through the full LangGraph pipeline (async, non-streaming).
     The BATCH_SEMAPHORE ensures at most 3 of these run concurrently."""
     async with BATCH_SEMAPHORE:
@@ -112,7 +109,7 @@ async def _process_single_file(file: UploadFile) -> dict:
         print(f"\n[BATCH] Starting: {filename}")
 
         file_bytes = await file.read()
-        rfp_text = extract_text_from_pdf_bytes(file_bytes)
+        rfp_text = extract_text(file_bytes)
 
         if len(rfp_text.strip()) < 10:
             print(f"[BATCH] Skipping {filename}: not enough text.")
@@ -127,8 +124,10 @@ async def _process_single_file(file: UploadFile) -> dict:
 
         initial_state = {
             "rfp_text": rfp_text,
+            "user_id": user_id,
             "document_type": "",
             "is_valid_rfp": False,
+            "hard_constraints": {},
             "requirements": [],
             "cv_context": "",
             "is_match": False,
@@ -162,19 +161,70 @@ async def _process_single_file(file: UploadFile) -> dict:
 
 
 @app.post("/api/evaluate-rfp-batch")
-async def evaluate_rfp_batch(files: List[UploadFile] = File(...)):
+async def evaluate_rfp_batch(
+    files: List[UploadFile] = File(...),
+    user_id: str = Form(...)
+):
     """Accepts multiple PDF files and processes them in parallel (max 3 at once).
     Returns a JSON array of results once all jobs are complete."""
-    print(f"\n--- BATCH REQUEST RECEIVED: {len(files)} file(s) ---")
+    print(f"\n--- BATCH REQUEST RECEIVED: {len(files)} file(s) for user {user_id} ---")
     for f in files:
         print(f"  - {f.filename}")
 
     # asyncio.gather fires all tasks concurrently; BATCH_SEMAPHORE caps actual LLM calls to 3
-    results = await asyncio.gather(*[_process_single_file(f) for f in files])
+    results = await asyncio.gather(*[_process_single_file(f, user_id) for f in files])
 
     print(f"\n[BATCH] All {len(files)} job(s) complete.")
     return JSONResponse(content=list(results))
 
+
+# --- CV INGESTION ENDPOINT ---
+@app.post("/api/upload-cv")
+async def upload_cv(
+    file: UploadFile = File(...),
+    user_id: str = Form(...)
+):
+    """Parses a raw PDF resume via LLM, segments it, and pushes vectors to Qdrant."""
+    print(f"\n--- CV UPLOAD REQUEST RECEIVED ---")
+    print(f"File Name: {file.filename} | User: {user_id}")
+    
+    file_bytes = await file.read()
+    raw_text = extract_text(file_bytes)
+    
+    if len(raw_text.strip()) < 50:
+        return JSONResponse(status_code=400, content={"error": "PDF is empty or unreadable."})
+        
+    try:
+        # 1. Pre-flight classification (Fail Fast)
+        classification = classify_cv_document(raw_text)
+        if not classification.get("is_valid_resume") or classification.get("confidence_score", 0) < 80:
+            doc_type = classification.get("document_type", "Unknown")
+            return JSONResponse(
+                status_code=400, 
+                content={
+                    "status": "error",
+                    "error": "Invalid Document", 
+                    "message": f"This appears to be a {doc_type}. Please upload a valid Resume or CV."
+                }
+            )
+
+        # 2. LLM parsing (Semantic Chunking - Expensive)
+        chunks = parse_cv_to_json(raw_text)
+        if not chunks:
+            return JSONResponse(status_code=500, content={"error": "LLM failed to generate semantic chunks."})
+            
+        # Qdrant multi-tenant upsert
+        upsert_count = upsert_cv_to_qdrant(chunks, user_id)
+        
+        return {
+            "status": "success", 
+            "message": f"Successfully parsed and vectorized {upsert_count} chunks.",
+            "chunks_upserted": upsert_count,
+            "user_id": user_id
+        }
+    except Exception as e:
+        print(f"CV Upload Error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # --- AWS LAMBDA ADAPTER ---
 # This single line converts the FastAPI application into a form

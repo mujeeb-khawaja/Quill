@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@workspace/ui/components/al
 import { Button } from "@workspace/ui/components/button";
 import { Separator } from "@workspace/ui/components/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@workspace/ui/components/sheet";
 
 // --- TYPES ---
 interface HistoryItem {
@@ -113,6 +114,24 @@ export default function Dashboard() {
   // Overall batch running state
   const [batchRunning, setBatchRunning] = useState(false);
 
+  // --- SAAS ONBOARDING STATE ---
+  const [userId] = useState(() => localStorage.getItem('quill_user_id') ?? crypto.randomUUID());
+  
+  // Persist user_id
+  React.useEffect(() => {
+    if (!localStorage.getItem('quill_user_id')) {
+      localStorage.setItem('quill_user_id', userId);
+    }
+  }, [userId]);
+
+  const [hasActiveCV, setHasActiveCV] = useState(false);
+  const [activeCVName, setActiveCVName] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [cvUploading, setCvUploading] = useState(false);
+  const [cvUploadSuccess, setCvUploadSuccess] = useState<string | null>(null);
+  const [cvUploadError, setCvUploadError] = useState<string | null>(null);
+  const cvInputRef = useRef<HTMLInputElement>(null);
+
   // --- SINGLE FILE STATE (for backwards-compat with stepper) ---
   const [singleJob, setSingleJob] = useState<BatchJob | null>(null);
 
@@ -140,6 +159,41 @@ export default function Dashboard() {
     setHistory(prev => [newItem, ...prev]);
   };
 
+  const handleCVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCvUploading(true);
+    setCvUploadSuccess(null);
+    setCvUploadError(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', userId);
+
+    try {
+      const res = await fetch('http://localhost:8000/api/upload-cv', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.status === 'success') {
+        setHasActiveCV(true);
+        setActiveCVName(file.name);
+        setCvUploadSuccess(`Success! Extracted ${data.chunks_upserted} semantic chunks.`);
+        setTimeout(() => setSheetOpen(false), 2000);
+      } else {
+        setCvUploadError(data.message || data.error || "CV Upload Failed");
+      }
+    } catch (err) {
+      setCvUploadError("Failed to connect to server during CV upload.");
+    } finally {
+      setCvUploading(false);
+      if (cvInputRef.current) cvInputRef.current.value = '';
+    }
+  };
+
   // ─── SINGLE FILE (streaming) ─────────────────────────────────────────────
   const runSingleEvaluation = async (file: File) => {
     const job = makeBatchJob(file);
@@ -155,6 +209,7 @@ export default function Dashboard() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('user_id', userId);
 
       const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
         method: 'POST',
@@ -268,6 +323,7 @@ export default function Dashboard() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('user_id', userId);
 
       const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
         method: 'POST',
@@ -380,7 +436,7 @@ export default function Dashboard() {
 
   // ─── MAIN ENTRY ─────────────────────────────────────────────────────────
   const runEvaluation = () => {
-    if (selectedFiles.length === 0) return;
+    if (selectedFiles.length === 0 || !hasActiveCV) return;
 
     if (selectedFiles.length === 1) {
       setBatchMode(false);
@@ -510,8 +566,12 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div
-            onClick={triggerUpload}
-            className="group border-2 border-dashed border-border rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 hover:border-primary/50 hover:bg-muted/50 transition-all cursor-pointer relative"
+            onClick={() => hasActiveCV && triggerUpload()}
+            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${
+              hasActiveCV 
+                ? 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer' 
+                : 'border-border/50 bg-muted/20 opacity-50 cursor-not-allowed pointer-events-none'
+            }`}
           >
             {selectedFiles.length > 1
               ? <Files className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -527,13 +587,25 @@ export default function Dashboard() {
               </p>
               <p className="text-[10px] md:text-xs text-muted-foreground mt-1">Maximum size: 50MB each</p>
             </div>
-            <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" multiple />
+            <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" multiple disabled={!hasActiveCV} />
+            
+            {!hasActiveCV && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-[2px] rounded-xl pointer-events-auto">
+                <Button 
+                  onClick={(e) => { e.stopPropagation(); setSheetOpen(true); }}
+                  variant="default"
+                  className="shadow-xl"
+                >
+                  Upload CV to Unlock
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-3 pt-2">
             <Button
               onClick={runEvaluation}
-              disabled={selectedFiles.length === 0 || batchRunning || (!batchMode && singleStatus === 'processing')}
+              disabled={selectedFiles.length === 0 || batchRunning || (!batchMode && singleStatus === 'processing') || !hasActiveCV}
               className="bg-primary text-primary-foreground font-bold h-10 md:h-12 shadow-sm text-sm"
             >
               {(batchRunning || (!batchMode && singleStatus === 'processing'))
@@ -584,6 +656,90 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-2 md:gap-4">
+              {/* --- TOP NAV HUD --- */}
+              <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+                <SheetTrigger asChild>
+                  <div className="cursor-pointer transition-transform hover:scale-105">
+                    {hasActiveCV ? (
+                      <Badge variant="outline" className="hidden sm:inline-flex text-[10px] md:text-xs border-emerald-500/50 bg-emerald-500/10 text-emerald-500 font-bold px-3 py-1 gap-2 shadow-sm">
+                        <CheckCircle className="h-3 w-3" /> Active: {activeCVName}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="hidden sm:inline-flex text-[10px] md:text-xs border-destructive/50 bg-destructive/10 text-destructive font-bold px-3 py-1 gap-2 shadow-sm animate-pulse">
+                        <ShieldAlert className="h-3 w-3" /> Profile Incomplete
+                      </Badge>
+                    )}
+                  </div>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-[400px] sm:w-[540px] border-l border-border bg-background p-0 flex flex-col">
+                  <SheetHeader className="p-6 border-b border-border bg-muted/30">
+                    <SheetTitle>Manage AI Knowledge Base</SheetTitle>
+                    <SheetDescription>
+                      Upload your standard CV/Resume. Quill's LLM will parse it into semantic chunks to accurately evaluate hard constraints.
+                    </SheetDescription>
+                  </SheetHeader>
+                  <div className="p-6 flex-1 overflow-y-auto">
+                    
+                    {hasActiveCV && !cvUploading && (
+                      <Alert className="mb-6 bg-emerald-500/5 border-emerald-500/30">
+                        <CheckCircle className="h-4 w-4 text-emerald-500" />
+                        <span className="text-emerald-500 font-bold text-sm ml-2 tracking-wide uppercase">Profile Active</span>
+                        <AlertDescription className="mt-2 text-xs text-emerald-500/80">
+                          {activeCVName} is currently loaded into your Qdrant vector database. Uploading a new CV will completely replace the current knowledge base.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div 
+                      onClick={() => !cvUploading && cvInputRef.current?.click()}
+                      className={`group border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center gap-4 transition-all relative
+                        ${cvUploading ? 'border-primary/50 bg-muted/20 cursor-wait' : ''}
+                        ${cvUploadError ? 'border-destructive/50 bg-destructive/5 animate-pulse' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
+                        ${!cvUploading && !cvUploadError ? 'cursor-pointer' : ''}
+                      `}
+                    >
+                      {cvUploading ? (
+                        <Loader2 className="h-12 w-12 text-primary animate-spin" />
+                      ) : cvUploadError ? (
+                        <ShieldAlert className="h-12 w-12 text-destructive" />
+                      ) : (
+                        <FileText className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-colors" />
+                      )}
+                      <div className="text-center">
+                        <p className={`text-sm font-bold ${cvUploadError ? 'text-destructive' : 'text-foreground'}`}>
+                          {cvUploading ? "Extracting Semantic Chunks..." : cvUploadError ? "Invalid Document Type" : "Upload PDF Resume"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {cvUploading ? "Vectorizing and sending to Qdrant" : cvUploadError ? "Click to try a different file" : "Will overwrite existing data"}
+                        </p>
+                      </div>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        ref={cvInputRef} 
+                        onChange={handleCVUpload} 
+                        accept=".pdf" 
+                        disabled={cvUploading}
+                      />
+                    </div>
+                    
+                    {cvUploadSuccess && (
+                      <div className="mt-4 p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-sm text-emerald-500 text-center animate-in zoom-in-95">
+                        {cvUploadSuccess}
+                      </div>
+                    )}
+
+                    {cvUploadError && (
+                      <div className="mt-4 p-4 rounded-xl border border-destructive/30 bg-destructive/10 text-[11px] font-medium text-destructive text-center animate-in zoom-in-95 leading-relaxed">
+                        <ShieldAlert className="h-4 w-4 inline mr-2 mb-0.5" />
+                        {cvUploadError}
+                      </div>
+                    )}
+                    
+                  </div>
+                </SheetContent>
+              </Sheet>
+
               <Badge variant="outline" className="hidden sm:inline-flex text-[10px] md:text-xs text-muted-foreground border-border font-medium px-2 py-0">v1.2.0-Alpha</Badge>
               <Button
                 variant="ghost"
