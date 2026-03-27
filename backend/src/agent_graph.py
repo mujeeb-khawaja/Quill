@@ -66,7 +66,7 @@ def get_retriever_for_user(user_id: str):
     # Using Google Embeddings API (Models/text-embedding-004)
     # This replaces the local 2GB PyTorch models for better Lambda performance.
     embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
+        model="models/gemini-embedding-2-preview",
         google_api_key=os.getenv("GEMINI_API_KEY")
     )
     qdrant = QdrantVectorStore.from_existing_collection(
