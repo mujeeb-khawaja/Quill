@@ -1,16 +1,26 @@
-langchain
-langchain-community
-langchain-huggingface
-langchain-qdrant
-qdrant-client
-sentence-transformers
-python-dotenv
-pdfplumber
-langgraph
-langchain-groq
-langchain-google-genai
-langchain-openai
+# FastAPI & Serverless
 fastapi
+mangum
 uvicorn
 python-multipart
-mangum
+
+# LangGraph & Core AI
+langgraph
+langchain
+langchain-community
+langchain-groq
+langchain-google-genai
+
+# Vector Database
+qdrant-client
+langchain-qdrant
+
+# Document Processing
+pdfplumber
+
+# Supporting Libs
+python-dotenv
+pydantic
+pydantic-settings
+requests
+aiohttp

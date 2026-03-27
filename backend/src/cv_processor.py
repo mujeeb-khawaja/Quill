@@ -8,10 +8,8 @@ from dotenv import load_dotenv
 # LangChain LLMs
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
-
 # Qdrant & Embeddings
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as rest
@@ -205,11 +203,11 @@ def upsert_cv_to_qdrant(chunks: List[Dict[str, Any]], user_id: str) -> int:
     if not documents:
         return 0
 
-    # 3. Upsert using Langchain Qdrant wrapper
-    embeddings = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs={'normalize_embeddings': True}
+    # 3. Upsert using Google Generative AI Embeddings (Models/text-embedding-004)
+    # This replaces the heavy HuggingFace local models for serverless compatibility.
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/text-embedding-004",
+        google_api_key=os.getenv("GEMINI_API_KEY")
     )
     
     QdrantVectorStore.from_documents(

@@ -10,10 +10,8 @@ from langgraph.graph import StateGraph, END
 # LangChain LLMs
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
-
 # Qdrant (for Researcher Node)
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 
@@ -56,14 +54,8 @@ def get_llm():
         temperature=0.2
     )
 
-    openrouter_llm = ChatOpenAI(
-        model="meta-llama/llama-3.3-70b-instruct:free",
-        api_key=os.getenv("META_LLM_KEY"),
-        base_url="https://openrouter.ai/api/v1",
-        temperature=0.2
-    )
-    
-    fallback_llm = gemini_llm.with_fallbacks([groq_llm, openrouter_llm])
+    # Fallback 1: Gemini (Standard)
+    fallback_llm = groq_llm.with_fallbacks([gemini_llm])
     return fallback_llm
 
 llm = get_llm()
@@ -71,10 +63,11 @@ llm = get_llm()
 def get_retriever_for_user(user_id: str):
     """Creates a retriever specifically filtered for the given user's chunks."""
     print(f"      [SYSTEM] Initializing Qdrant Retriever for User: {user_id}")
-    embeddings = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs={'normalize_embeddings': True}
+    # Using Google Embeddings API (Models/text-embedding-004)
+    # This replaces the local 2GB PyTorch models for better Lambda performance.
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/text-embedding-004",
+        google_api_key=os.getenv("GEMINI_API_KEY")
     )
     qdrant = QdrantVectorStore.from_existing_collection(
         embedding=embeddings,

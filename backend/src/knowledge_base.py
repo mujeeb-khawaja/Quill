@@ -2,7 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 
@@ -32,15 +32,11 @@ def setup_knowledge_base():
         chunks.append(doc)
     print(f"Created {len(chunks)} chunks.")
     
-    # 3. Create Embeddings
-    print("Initializing HuggingFaceBgeEmbeddings (BAAI/bge-small-en-v1.5)...")
-    model_name = "BAAI/bge-small-en-v1.5"
-    model_kwargs = {'device': 'cpu'}
-    encode_kwargs = {'normalize_embeddings': True}
-    embeddings = HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs
+    # Use Google's lightweight embedding API instead of heavy local HuggingFace models
+    print("Initializing GoogleGenerativeAIEmbeddings (models/text-embedding-004)...")
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/text-embedding-004",
+        google_api_key=os.getenv("GEMINI_API_KEY")
     )
     
     # 4. Upsert to Qdrant
