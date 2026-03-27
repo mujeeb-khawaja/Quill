@@ -10,3 +10,7 @@ langgraph
 langchain-groq
 langchain-google-genai
 langchain-openai
+fastapi
+uvicorn
+python-multipart
+mangum

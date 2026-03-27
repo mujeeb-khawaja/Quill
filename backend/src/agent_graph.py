@@ -23,10 +23,14 @@ load_dotenv()
 # --- STATE DEFINITION ---
 class AgentState(TypedDict):
     rfp_text: str
+    user_id: str             # Multi-tenancy: links to Qdrant metadata
+    document_type: str       # Classifier: e.g. 'Job RFP', 'Motivation Letter', 'Resume'
+    is_valid_rfp: bool       # Classifier: True only if document is a valid RFP/Job Description
+    hard_constraints: dict   # Extractor: 6 key logistical factors
     requirements: List[str]
     cv_context: str
-    is_match: bool          # Phase 2.5 Evaluator decision
-    evaluator_reasoning: str # Phase 2.5 Evaluator reasoning
+    is_match: bool           # Evaluator decision
+    evaluator_reasoning: str # Evaluator reasoning
     current_draft: str
     review_feedback: str
     revision_count: int
@@ -59,13 +63,14 @@ def get_llm():
         temperature=0.2
     )
     
-    fallback_llm = groq_llm.with_fallbacks([gemini_llm, openrouter_llm])
+    fallback_llm = gemini_llm.with_fallbacks([groq_llm, openrouter_llm])
     return fallback_llm
 
 llm = get_llm()
 
-def get_retriever():
-    print("      [SYSTEM] Initializing Qdrant Retriever and Embedding Model...")
+def get_retriever_for_user(user_id: str):
+    """Creates a retriever specifically filtered for the given user's chunks."""
+    print(f"      [SYSTEM] Initializing Qdrant Retriever for User: {user_id}")
     embeddings = HuggingFaceEmbeddings(
         model_name="BAAI/bge-small-en-v1.5",
         model_kwargs={'device': 'cpu'},
@@ -77,42 +82,109 @@ def get_retriever():
         api_key=os.getenv("QDRANT_API_KEY"),
         collection_name="cv_portfolio"
     )
-    return qdrant.as_retriever(search_kwargs={"k": 3})
+    
+    # Qdrant filtering syntax used by LangChain
+    from qdrant_client.http import models as rest
+    filter_kwargs = rest.Filter(
+        must=[
+            rest.FieldCondition(
+                key="metadata.user_id",
+                match=rest.MatchValue(value=user_id)
+            )
+        ]
+    )
+    
+    return qdrant.as_retriever(
+        search_kwargs={
+            "k": 3,
+            "filter": filter_kwargs
+        }
+    )
 
-# --- NODE 1: EXTRACTOR ---
+# --- NODE 1: EXTRACTOR + DOCUMENT CLASSIFIER ---
 def extractor_node(state: AgentState):
     print("\n" + "="*50)
-    print("🛠️  [NODE: EXTRACTOR] - Reading RFP to find requirements")
+    print("🛠️  [NODE: EXTRACTOR] - Classifying document & extracting requirements")
     print("="*50)
     print(f"   -> Received RFP Text ({len(state.get('rfp_text', ''))} characters)")
-    
+
     prompt = f"""
-    You are an expert technical AI architect. Read the following RFP document text and extract the core technical and business requirements.
-    Output ONLY a valid JSON array of strings (e.g., ["Requirement 1", "Requirement 2"]). No other text.
+    You are an expert document classifier and technical AI architect.
     
-    RFP TEXT:
+    STEP 1 — CLASSIFY THE DOCUMENT:
+    Determine the true nature of the provided document text.
+    - If it is a Request for Proposal (RFP), Job Description, Freelance Gig Posting, or any document
+      soliciting a professional bid or application FOR A SERVICE/ROLE, set "is_valid_rfp" to true.
+    - If it is a personal letter (cover letter, motivation letter), resume/CV, receipt, invoice,
+      or any other document that is NOT asking for a proposal, set "is_valid_rfp" to false.
+    
+    STEP 2 — CLASSIFY THE DOCUMENT TYPE:
+    Identify a short, human-readable label for the document type.
+    Examples: "Job RFP", "Freelance Gig", "Motivation Letter", "Resume", "Invoice", "Unknown Document".
+
+    STEP 3 — EXTRACT REQUIREMENTS (only if is_valid_rfp is true):
+    If it IS a valid RFP, extract the core technical and business requirements as an array of strings.
+    Also, explicitly extract the following 6 "hard constraints" if mentioned in the text. If a constraint is not mentioned, set it to "None".
+    
+    Output ONLY a valid JSON object in exactly this format. No other text:
+    {{
+      "is_valid_rfp": true, 
+      "document_type": "Job RFP",
+      "hard_constraints": {{
+        "location_restriction": "US Only | Remote Global | None",
+        "citizenship_clearance_required": "US Citizen | NATO SC | None",
+        "required_years_experience": 5,
+        "required_education": "Master's | PhD | None",
+        "visa_sponsorship": "No sponsorship | Sponsorship available | None",
+        "language_requirements": ["English C2", "None"]
+      }},
+      "extracted_requirements": ["Requirement 1", "Requirement 2"]
+    }}
+    
+    DOCUMENT TEXT:
     {state['rfp_text']}
     """
-    print("   -> Sending prompt to LLM...")
+
+    print("   -> Sending document to LLM for classification and extraction...")
     response = llm.invoke(prompt)
-    
+
     try:
         content = response.content
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].strip()
-        requirements = json.loads(content)
+        result = json.loads(content)
+
+        is_valid_rfp = bool(result.get("is_valid_rfp", False))
+        document_type = str(result.get("document_type", "Unknown Document"))
+        hard_constraints = result.get("hard_constraints", {})
+        requirements = result.get("extracted_requirements", [])
         if not isinstance(requirements, list):
-            requirements = [str(requirements)]
-        print(f"   ✅ Successfully Extracted {len(requirements)} Requirements:")
-        for r in requirements:
-            print(f"      - {r}")
+            requirements = []
+
+        print(f"   -> Document Type: {document_type}")
+        print(f"   -> Is Valid RFP: {'✅ YES' if is_valid_rfp else '❌ NO'}")
+        if is_valid_rfp:
+            print(f"   ✅ Successfully Extracted {len(requirements)} Requirements & Constraints:")
+            print(f"      - Location: {hard_constraints.get('location_restriction')}")
+            print(f"      - Experience: {hard_constraints.get('required_years_experience')} years")
+        else:
+            print(f"   ⛔ Halting pipeline — document is not a valid RFP.")
+
     except Exception as e:
-        print(f"   ⚠️ Warning: Extractor failed clean JSON. Error: {e}")
-        requirements = [response.content]
-        
-    return {"requirements": requirements}
+        print(f"   ⚠️ Warning: Extractor/Classifier failed clean JSON. Error: {e}")
+        is_valid_rfp = False
+        document_type = "Unknown Document"
+        hard_constraints = {}
+        requirements = []
+
+    return {
+        "is_valid_rfp": is_valid_rfp,
+        "document_type": document_type,
+        "hard_constraints": hard_constraints,
+        "requirements": requirements
+    }
 
 # --- NODE 2: RESEARCHER ---
 def researcher_node(state: AgentState):
@@ -120,7 +192,12 @@ def researcher_node(state: AgentState):
     print("🔎 [NODE: RESEARCHER] - Finding CV matches in Qdrant")
     print("="*50)
     
-    retriever = get_retriever()
+    user_id = state.get("user_id")
+    if not user_id:
+        print("   ⚠️ Error: No user_id found in state. Cannot search Qdrant.")
+        return {"cv_context": ""}
+        
+    retriever = get_retriever_for_user(user_id)
     requirements = state.get("requirements", [])
     
     query = " ".join(requirements)
@@ -141,21 +218,37 @@ def evaluator_node(state: AgentState):
     print("="*50)
     
     prompt = f"""
-    You are a strict Gatekeeper for an auto-bidding system.
-    Evaluate if the user's CV Context strongly aligns with the core requirements of the RFP.
+    You are a strict Gatekeeper for an auto-bidding SaaS platform.
+    Your job is to protect users from applying to jobs they absolutely cannot get due to logistical constraints.
     
-    CORE REQUIREMENTS:
+    You will receive the job's HARD CONSTRAINTS and technical requirements, along with the user's CV CONTEXT.
+    
+    EVALUATION RULES (Evaluate in this strict order):
+    1. Geography: If the job location_restriction is not "Remote/None", the user's 'personal_logistics' chunk must show they reside there.
+    2. Citizenship/Clearance: If citizenship_clearance_required is not "None", user must explicitly possess it.
+    3. Experience: If `required_years_experience >= 4`, the user's `experience_level` chunk must show sufficient seniority (Junior/Mid-levels must be rejected for Senior roles).
+    4. Education: If a specific degree (e.g. Master's/PhD) is strictly required, the user's `education` must meet it.
+    5. Work Authorization/Visa: If visa sponsorship is explicitly denied, the user must have local authorization.
+    6. Language proficiency: Native/C2 requirements must be met by user's listed languages.
+    
+    If ANY of the 6 hard constraints fail:
+    You MUST output {{"is_match": false, "reasoning": "Exact logistical mismatch reason"}}. 
+    A perfect technical skill match CANNOT override a failed hard constraint. Do NOT mention technical skills in the rejection if a hard constraint failed.
+    
+    If all hard constraints pass:
+    Evaluate the technical requirements as normal.
+    
+    JOB HARD CONSTRAINTS:
+    {json.dumps(state.get('hard_constraints', {}), indent=2)}
+
+    JOB TECHNICAL REQUIREMENTS:
     {state['requirements']}
     
     USER CV CONTEXT:
     {state['cv_context']}
     
-    Determine if this is a suitable match to submit a proposal.
-    Output ONLY a valid JSON object in exactly this format:
-    {{"is_match": true, "reasoning": "Brief 1-sentence explanation"}}
-    OR
-    {{"is_match": false, "reasoning": "Brief 1-sentence explanation"}}
-    No other text.
+    Output ONLY a valid JSON object in exactly this format. No other text:
+    {{"is_match": boolean, "reasoning": "Brief 1-sentence explanation"}}
     """
     
     print("   -> Evaluating Match against CV Context...")
@@ -196,17 +289,25 @@ def drafter_node(state: AgentState):
         feedback_prompt = f"\nPrevious Reviewer Feedback to address: {review_feedback}"
     
     prompt = f"""
-    You are an expert software proposal writer. Draft a professional, personalized response to the client's RFP.
+    You are an elite, Top-Rated Plus freelance Software & AI Engineer writing a winning proposal for a client.
+    Your goal is to grab the client's attention in the very first sentence. NO CORPORATE FLUFF.
+
+    CRITICAL RULES:
+    1. NO GENERIC GREETINGS: Do not use "Dear Hiring Manager", "I am writing to apply", "I am excited to submit", or "Hope you are doing well."
+    2. THE HOOK (First 2 sentences): Immediately state their exact problem and how you will solve it using specific technologies from the CV Context. 
+    3. THE PROOF: In the next paragraph, prove you can do it by citing ONE highly relevant project, metric, or outcome from the CV Context. Do not list everything; be surgical.
+    4. TONE: Confident, direct, consultative, and concise. Speak like a senior engineer advising a client, not a junior begging for a job.
+    5. THE CLOSE: Do not use "Sincerely" or "Thank you for considering." End with a brief Call to Action (CTA) or a technical question about their project to invite a reply (e.g., "Are you currently using [Tech] for this, or starting from scratch? Let's hop on a 5-minute call to discuss the architecture.")
+    6. NO HALLUCINATIONS: You may ONLY claim skills, projects, and metrics explicitly found in the CV Context.
     
-    CLIENT REQUIREMENTS:
+    [RFP REQUIREMENTS]:
     {state['requirements']}
     
-    YOUR CV CONTEXT (Use this to prove you have the skills):
+    [MY CV CONTEXT]:
     {state['cv_context']}
     {feedback_prompt}
     
-    Draft the letter directly. Do not include placeholders like [Your Name]. Use 'Mujeeb Khawaja'.
-    Conclude the letter professionally and stop generating. Do not repeat sentences.
+    Write the proposal now:
     """
     
     print("   -> Sending Draft request to LLM...")
@@ -252,6 +353,27 @@ def reviewer_node(state: AgentState):
         return {"review_feedback": feedback}
 
 # --- ROUTING LOGIC ---
+def route_after_classifier(state: AgentState):
+    """Routes to researcher if valid RFP, otherwise halts immediately with a clear message."""
+    print("\n" + "-"*40)
+    print("🔀 [ROUTER] - Document Classifier Decision")
+    if state.get("is_valid_rfp", False):
+        print("   -> Path: Valid RFP detected. Routing to RESEARCHER.")
+        print("-"*40)
+        return "researcher"
+    else:
+        doc_type = state.get("document_type", "Unknown Document")
+        rejection_message = (
+            f"Document Error: This appears to be a '{doc_type}', not a valid Job RFP or "
+            f"Freelance Gig description. Please upload a proper RFP or job posting for evaluation."
+        )
+        print(f"   -> Path: Invalid document type ('{doc_type}'). Halting pipeline.")
+        print("-"*40)
+        # Inject the rejection message into state so the frontend Gatekeeper UI displays it
+        state["evaluator_reasoning"] = rejection_message
+        state["is_match"] = False
+        return END
+
 def evaluate_match(state: AgentState):
     print("\n" + "-"*40)
     print("🔀 [ROUTER] - Gatekeeper Decision")
@@ -275,29 +397,30 @@ def should_continue_revision(state: AgentState):
         print("   -> Path: Max Revisions Reached (3). Forcing END.")
         print("-"*40)
         return END
-    
+
     print("   -> Path: Proposal Failed. Routing back to DRAFTER for a rewrite.")
     print("-"*40)
     return "drafter"
 
 # --- COMPILE GRAPH ---
 def build_graph():
-    print("\n[SYSTEM] Compiling LangGraph State Machine with Evaluator Filter...")
+    print("\n[SYSTEM] Compiling LangGraph State Machine with Document Classifier + Evaluator Filter...")
     graph = StateGraph(AgentState)
-    
+
     graph.add_node("extractor", extractor_node)
     graph.add_node("researcher", researcher_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("drafter", drafter_node)
     graph.add_node("reviewer", reviewer_node)
-    
+
     graph.set_entry_point("extractor")
-    graph.add_edge("extractor", "researcher")
+    # After extractor: classify first — only proceed to researcher if it's a valid RFP
+    graph.add_conditional_edges("extractor", route_after_classifier)
     graph.add_edge("researcher", "evaluator")
     graph.add_conditional_edges("evaluator", evaluate_match)
     graph.add_edge("drafter", "reviewer")
     graph.add_conditional_edges("reviewer", should_continue_revision)
-    
+
     return graph.compile()
 
 # --- LOCAL BATCH TESTING ---
@@ -340,6 +463,8 @@ if __name__ == "__main__":
                 
                 initial_state = {
                     "rfp_text": rfp_text,
+                    "document_type": "",
+                    "is_valid_rfp": False,
                     "requirements": [],
                     "cv_context": "",
                     "is_match": False,

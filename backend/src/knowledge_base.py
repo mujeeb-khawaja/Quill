@@ -11,7 +11,8 @@ load_dotenv()
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_URL = os.getenv("QDRANT_URL")
 
-CV_FILE_PATH = "cv.json"
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+CV_FILE_PATH = os.path.join(CURRENT_DIR, "..", "cv.json")
 COLLECTION_NAME = "cv_portfolio"
 
 def setup_knowledge_base():
@@ -66,7 +67,7 @@ def test_retrieval(qdrant):
     print("\n" + "="*50)
     print("      🔍 TESTING SEMANTIC SEARCH")
     print("="*50)
-    query = "What experience does Mujeeb have with AWS and Cloud deployment?"
+    query = "What is nationality of Mujeeb and where does he lives?"
     print(f"\nQuery: {query}")
     
     results = qdrant.similarity_search(query, k=2)
