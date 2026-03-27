@@ -35,7 +35,7 @@ def setup_knowledge_base():
     # Use Google's lightweight embedding API instead of heavy local HuggingFace models
     print("Initializing GoogleGenerativeAIEmbeddings (models/text-embedding-004)...")
     embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
+        model="models/gemini-embedding-2-preview",
         google_api_key=os.getenv("GEMINI_API_KEY")
     )
     

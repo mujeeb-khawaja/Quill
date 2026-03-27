@@ -157,9 +157,35 @@ def upsert_cv_to_qdrant(chunks: List[Dict[str, Any]], user_id: str) -> int:
     api_key = os.getenv("QDRANT_API_KEY")
     collection_name = "cv_portfolio"
 
+    from qdrant_client.http import models as rest
+
     client = QdrantClient(url=url, api_key=api_key)
-    
-    # 0. Ensure Payload Index exists for metadata.user_id (fixes 400 Bad Request)
+
+    # 0. Ensure Collection Exists with CORRECT dimensions
+    # Auto-recreates if dimensions are mismatched (e.g., old 768 vs new 3072)
+    REQUIRED_DIM = 3072
+    needs_create = False
+    try:
+        info = client.get_collection(collection_name)
+        existing_dim = info.config.params.vectors.size
+        if existing_dim != REQUIRED_DIM:
+            print(f"      [CV PROCESSOR] Dimension mismatch ({existing_dim} vs {REQUIRED_DIM}). Recreating collection...")
+            client.delete_collection(collection_name)
+            needs_create = True
+        else:
+            print(f"      [CV PROCESSOR] Collection OK ({existing_dim} dimensions).")
+    except Exception:
+        needs_create = True
+
+    if needs_create:
+        print(f"      [CV PROCESSOR] Creating collection with {REQUIRED_DIM} dimensions...")
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=rest.VectorParams(size=REQUIRED_DIM, distance=rest.Distance.COSINE),
+        )
+        print(f"      [CV PROCESSOR] Collection created successfully ({REQUIRED_DIM} dimensions).")
+
+    # 0b. Ensure Payload Index exists for metadata.user_id (fixes 400 Bad Request)
     try:
         client.create_payload_index(
             collection_name=collection_name,
@@ -205,8 +231,9 @@ def upsert_cv_to_qdrant(chunks: List[Dict[str, Any]], user_id: str) -> int:
 
     # 3. Upsert using Google Generative AI Embeddings (Models/text-embedding-004)
     # This replaces the heavy HuggingFace local models for serverless compatibility.
+    # Using the specific model that your API key supports (Confirmed via list_models.py)
     embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
+        model="models/gemini-embedding-2-preview",
         google_api_key=os.getenv("GEMINI_API_KEY")
     )
     
