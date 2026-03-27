@@ -23,8 +23,10 @@ load_dotenv()
 # --- STATE DEFINITION ---
 class AgentState(TypedDict):
     rfp_text: str
+    user_id: str             # Multi-tenancy: links to Qdrant metadata
     document_type: str       # Classifier: e.g. 'Job RFP', 'Motivation Letter', 'Resume'
     is_valid_rfp: bool       # Classifier: True only if document is a valid RFP/Job Description
+    hard_constraints: dict   # Extractor: 6 key logistical factors
     requirements: List[str]
     cv_context: str
     is_match: bool           # Evaluator decision
@@ -66,8 +68,9 @@ def get_llm():
 
 llm = get_llm()
 
-def _init_retriever():
-    print("      [SYSTEM] Initializing Qdrant Retriever and Embedding Model...")
+def get_retriever_for_user(user_id: str):
+    """Creates a retriever specifically filtered for the given user's chunks."""
+    print(f"      [SYSTEM] Initializing Qdrant Retriever for User: {user_id}")
     embeddings = HuggingFaceEmbeddings(
         model_name="BAAI/bge-small-en-v1.5",
         model_kwargs={'device': 'cpu'},
@@ -79,16 +82,24 @@ def _init_retriever():
         api_key=os.getenv("QDRANT_API_KEY"),
         collection_name="cv_portfolio"
     )
-    return qdrant.as_retriever(search_kwargs={"k": 3})
-
-# Initialize globally so it's not reloaded on every request
-global_retriever = None
-
-def get_retriever():
-    global global_retriever
-    if global_retriever is None:
-        global_retriever = _init_retriever()
-    return global_retriever
+    
+    # Qdrant filtering syntax used by LangChain
+    from qdrant_client.http import models as rest
+    filter_kwargs = rest.Filter(
+        must=[
+            rest.FieldCondition(
+                key="metadata.user_id",
+                match=rest.MatchValue(value=user_id)
+            )
+        ]
+    )
+    
+    return qdrant.as_retriever(
+        search_kwargs={
+            "k": 3,
+            "filter": filter_kwargs
+        }
+    )
 
 # --- NODE 1: EXTRACTOR + DOCUMENT CLASSIFIER ---
 def extractor_node(state: AgentState):
@@ -112,11 +123,23 @@ def extractor_node(state: AgentState):
     Examples: "Job RFP", "Freelance Gig", "Motivation Letter", "Resume", "Invoice", "Unknown Document".
 
     STEP 3 — EXTRACT REQUIREMENTS (only if is_valid_rfp is true):
-    If it IS a valid RFP, extract the core technical and business requirements as a JSON array of strings.
-    If it is NOT a valid RFP, leave "extracted_requirements" as an empty array [].
+    If it IS a valid RFP, extract the core technical and business requirements as an array of strings.
+    Also, explicitly extract the following 6 "hard constraints" if mentioned in the text. If a constraint is not mentioned, set it to "None".
     
     Output ONLY a valid JSON object in exactly this format. No other text:
-    {{"is_valid_rfp": true, "document_type": "Job RFP", "extracted_requirements": ["Requirement 1", "Requirement 2"]}}
+    {{
+      "is_valid_rfp": true, 
+      "document_type": "Job RFP",
+      "hard_constraints": {{
+        "location_restriction": "US Only | Remote Global | None",
+        "citizenship_clearance_required": "US Citizen | NATO SC | None",
+        "required_years_experience": 5,
+        "required_education": "Master's | PhD | None",
+        "visa_sponsorship": "No sponsorship | Sponsorship available | None",
+        "language_requirements": ["English C2", "None"]
+      }},
+      "extracted_requirements": ["Requirement 1", "Requirement 2"]
+    }}
     
     DOCUMENT TEXT:
     {state['rfp_text']}
@@ -135,6 +158,7 @@ def extractor_node(state: AgentState):
 
         is_valid_rfp = bool(result.get("is_valid_rfp", False))
         document_type = str(result.get("document_type", "Unknown Document"))
+        hard_constraints = result.get("hard_constraints", {})
         requirements = result.get("extracted_requirements", [])
         if not isinstance(requirements, list):
             requirements = []
@@ -142,9 +166,9 @@ def extractor_node(state: AgentState):
         print(f"   -> Document Type: {document_type}")
         print(f"   -> Is Valid RFP: {'✅ YES' if is_valid_rfp else '❌ NO'}")
         if is_valid_rfp:
-            print(f"   ✅ Successfully Extracted {len(requirements)} Requirements:")
-            for r in requirements:
-                print(f"      - {r}")
+            print(f"   ✅ Successfully Extracted {len(requirements)} Requirements & Constraints:")
+            print(f"      - Location: {hard_constraints.get('location_restriction')}")
+            print(f"      - Experience: {hard_constraints.get('required_years_experience')} years")
         else:
             print(f"   ⛔ Halting pipeline — document is not a valid RFP.")
 
@@ -152,11 +176,13 @@ def extractor_node(state: AgentState):
         print(f"   ⚠️ Warning: Extractor/Classifier failed clean JSON. Error: {e}")
         is_valid_rfp = False
         document_type = "Unknown Document"
+        hard_constraints = {}
         requirements = []
 
     return {
         "is_valid_rfp": is_valid_rfp,
         "document_type": document_type,
+        "hard_constraints": hard_constraints,
         "requirements": requirements
     }
 
@@ -166,7 +192,12 @@ def researcher_node(state: AgentState):
     print("🔎 [NODE: RESEARCHER] - Finding CV matches in Qdrant")
     print("="*50)
     
-    retriever = get_retriever()
+    user_id = state.get("user_id")
+    if not user_id:
+        print("   ⚠️ Error: No user_id found in state. Cannot search Qdrant.")
+        return {"cv_context": ""}
+        
+    retriever = get_retriever_for_user(user_id)
     requirements = state.get("requirements", [])
     
     query = " ".join(requirements)
@@ -187,21 +218,37 @@ def evaluator_node(state: AgentState):
     print("="*50)
     
     prompt = f"""
-    You are a strict Gatekeeper for an auto-bidding system.
-    Evaluate if the user's CV Context strongly aligns with the core requirements of the RFP.
+    You are a strict Gatekeeper for an auto-bidding SaaS platform.
+    Your job is to protect users from applying to jobs they absolutely cannot get due to logistical constraints.
     
-    CORE REQUIREMENTS:
+    You will receive the job's HARD CONSTRAINTS and technical requirements, along with the user's CV CONTEXT.
+    
+    EVALUATION RULES (Evaluate in this strict order):
+    1. Geography: If the job location_restriction is not "Remote/None", the user's 'personal_logistics' chunk must show they reside there.
+    2. Citizenship/Clearance: If citizenship_clearance_required is not "None", user must explicitly possess it.
+    3. Experience: If `required_years_experience >= 4`, the user's `experience_level` chunk must show sufficient seniority (Junior/Mid-levels must be rejected for Senior roles).
+    4. Education: If a specific degree (e.g. Master's/PhD) is strictly required, the user's `education` must meet it.
+    5. Work Authorization/Visa: If visa sponsorship is explicitly denied, the user must have local authorization.
+    6. Language proficiency: Native/C2 requirements must be met by user's listed languages.
+    
+    If ANY of the 6 hard constraints fail:
+    You MUST output {{"is_match": false, "reasoning": "Exact logistical mismatch reason"}}. 
+    A perfect technical skill match CANNOT override a failed hard constraint. Do NOT mention technical skills in the rejection if a hard constraint failed.
+    
+    If all hard constraints pass:
+    Evaluate the technical requirements as normal.
+    
+    JOB HARD CONSTRAINTS:
+    {json.dumps(state.get('hard_constraints', {}), indent=2)}
+
+    JOB TECHNICAL REQUIREMENTS:
     {state['requirements']}
     
     USER CV CONTEXT:
     {state['cv_context']}
     
-    Determine if this is a suitable match to submit a proposal.
-    Output ONLY a valid JSON object in exactly this format:
-    {{"is_match": true, "reasoning": "Brief 1-sentence explanation"}}
-    OR
-    {{"is_match": false, "reasoning": "Brief 1-sentence explanation"}}
-    No other text.
+    Output ONLY a valid JSON object in exactly this format. No other text:
+    {{"is_match": boolean, "reasoning": "Brief 1-sentence explanation"}}
     """
     
     print("   -> Evaluating Match against CV Context...")
@@ -242,22 +289,25 @@ def drafter_node(state: AgentState):
         feedback_prompt = f"\nPrevious Reviewer Feedback to address: {review_feedback}"
     
     prompt = f"""
-    You are an expert software proposal writer. Draft a professional, personalized 
-    response to the client's RFP.
+    You are an elite, Top-Rated Plus freelance Software & AI Engineer writing a winning proposal for a client.
+    Your goal is to grab the client's attention in the very first sentence. NO CORPORATE FLUFF.
 
-    WARNING: You are strictly forbidden from claiming any skill, software, or experience that is 
-    not explicitly written in the provided CV Context. If the RFP asks for a skill you do not have, 
-    ignore it or pivot to a related skill you DO have. Do not hallucinate.
+    CRITICAL RULES:
+    1. NO GENERIC GREETINGS: Do not use "Dear Hiring Manager", "I am writing to apply", "I am excited to submit", or "Hope you are doing well."
+    2. THE HOOK (First 2 sentences): Immediately state their exact problem and how you will solve it using specific technologies from the CV Context. 
+    3. THE PROOF: In the next paragraph, prove you can do it by citing ONE highly relevant project, metric, or outcome from the CV Context. Do not list everything; be surgical.
+    4. TONE: Confident, direct, consultative, and concise. Speak like a senior engineer advising a client, not a junior begging for a job.
+    5. THE CLOSE: Do not use "Sincerely" or "Thank you for considering." End with a brief Call to Action (CTA) or a technical question about their project to invite a reply (e.g., "Are you currently using [Tech] for this, or starting from scratch? Let's hop on a 5-minute call to discuss the architecture.")
+    6. NO HALLUCINATIONS: You may ONLY claim skills, projects, and metrics explicitly found in the CV Context.
     
-    CLIENT REQUIREMENTS:
+    [RFP REQUIREMENTS]:
     {state['requirements']}
     
-    YOUR CV CONTEXT (Use this to prove you have the skills):
+    [MY CV CONTEXT]:
     {state['cv_context']}
     {feedback_prompt}
     
-    Draft the letter directly. Do not include placeholders like [Your Name]. Use 'Mujeeb Khawaja'.
-    Conclude the letter professionally and stop generating. Do not repeat sentences.
+    Write the proposal now:
     """
     
     print("   -> Sending Draft request to LLM...")
