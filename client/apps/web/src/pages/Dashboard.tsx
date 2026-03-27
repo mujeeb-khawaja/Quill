@@ -116,7 +116,7 @@ export default function Dashboard() {
 
   // --- SAAS ONBOARDING STATE ---
   const [userId] = useState(() => localStorage.getItem('quill_user_id') ?? crypto.randomUUID());
-  
+
   // Persist user_id
   React.useEffect(() => {
     if (!localStorage.getItem('quill_user_id')) {
@@ -172,12 +172,12 @@ export default function Dashboard() {
     formData.append('user_id', userId);
 
     try {
-      const res = await fetch('http://localhost:8000/api/upload-cv', {
+      const res = await fetch('https://ox3qtvivf1.execute-api.eu-north-1.amazonaws.com/api/upload-cv', {
         method: 'POST',
         body: formData
       });
       const data = await res.json();
-      
+
       if (res.ok && data.status === 'success') {
         setHasActiveCV(true);
         setActiveCVName(file.name);
@@ -211,7 +211,7 @@ export default function Dashboard() {
       formData.append('file', file);
       formData.append('user_id', userId);
 
-      const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
+      const response = await fetch('https://ox3qtvivf1.execute-api.eu-north-1.amazonaws.com/api/evaluate-rfp', {
         method: 'POST',
         body: formData,
       });
@@ -325,7 +325,7 @@ export default function Dashboard() {
       formData.append('file', file);
       formData.append('user_id', userId);
 
-      const response = await fetch('http://localhost:8000/api/evaluate-rfp', {
+      const response = await fetch('https://ox3qtvivf1.execute-api.eu-north-1.amazonaws.com/api/evaluate-rfp', {
         method: 'POST',
         body: formData,
       });
@@ -567,11 +567,10 @@ export default function Dashboard() {
         <CardContent className="space-y-6">
           <div
             onClick={() => hasActiveCV && triggerUpload()}
-            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${
-              hasActiveCV 
-                ? 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer' 
-                : 'border-border/50 bg-muted/20 opacity-50 cursor-not-allowed pointer-events-none'
-            }`}
+            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${hasActiveCV
+              ? 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer'
+              : 'border-border/50 bg-muted/20 opacity-50 cursor-not-allowed pointer-events-none'
+              }`}
           >
             {selectedFiles.length > 1
               ? <Files className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -588,10 +587,10 @@ export default function Dashboard() {
               <p className="text-[10px] md:text-xs text-muted-foreground mt-1">Maximum size: 50MB each</p>
             </div>
             <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,.txt" multiple disabled={!hasActiveCV} />
-            
+
             {!hasActiveCV && (
               <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-[2px] rounded-xl pointer-events-auto">
-                <Button 
+                <Button
                   onClick={(e) => { e.stopPropagation(); setSheetOpen(true); }}
                   variant="default"
                   className="shadow-xl"
@@ -679,7 +678,7 @@ export default function Dashboard() {
                     </SheetDescription>
                   </SheetHeader>
                   <div className="p-6 flex-1 overflow-y-auto">
-                    
+
                     {hasActiveCV && !cvUploading && (
                       <Alert className="mb-6 bg-emerald-500/5 border-emerald-500/30">
                         <CheckCircle className="h-4 w-4 text-emerald-500" />
@@ -690,7 +689,7 @@ export default function Dashboard() {
                       </Alert>
                     )}
 
-                    <div 
+                    <div
                       onClick={() => !cvUploading && cvInputRef.current?.click()}
                       className={`group border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center gap-4 transition-all relative
                         ${cvUploading ? 'border-primary/50 bg-muted/20 cursor-wait' : ''}
@@ -713,16 +712,16 @@ export default function Dashboard() {
                           {cvUploading ? "Vectorizing and sending to Qdrant" : cvUploadError ? "Click to try a different file" : "Will overwrite existing data"}
                         </p>
                       </div>
-                      <input 
-                        type="file" 
-                        className="hidden" 
-                        ref={cvInputRef} 
-                        onChange={handleCVUpload} 
-                        accept=".pdf" 
+                      <input
+                        type="file"
+                        className="hidden"
+                        ref={cvInputRef}
+                        onChange={handleCVUpload}
+                        accept=".pdf"
                         disabled={cvUploading}
                       />
                     </div>
-                    
+
                     {cvUploadSuccess && (
                       <div className="mt-4 p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-sm text-emerald-500 text-center animate-in zoom-in-95">
                         {cvUploadSuccess}
@@ -735,7 +734,7 @@ export default function Dashboard() {
                         {cvUploadError}
                       </div>
                     )}
-                    
+
                   </div>
                 </SheetContent>
               </Sheet>
