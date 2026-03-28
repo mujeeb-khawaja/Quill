@@ -510,7 +510,7 @@ export default function Dashboard() {
 
   // ─── DETAIL PANEL (shared between single and drill-down) ─────────────────
   const renderDetailPanel = (job: BatchJob) => (
-    <div className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full max-h-[5000px] lg:max-h-none opacity-100 lg:ml-8 pb-10`}>
+    <div className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full lg:w-auto max-h-[5000px] lg:max-h-none opacity-100 lg:ml-8 pb-10`}>
       <div className="flex items-center justify-between px-2 cursor-pointer lg:cursor-default" onClick={() => window.innerWidth < 1024 && setIsLogsExpanded(!isLogsExpanded)}>
         <div className="flex items-center gap-3">
           <h2 className="text-[10px] md:text-sm font-bold tracking-[0.2em] uppercase text-muted-foreground">Internal Agent Logs</h2>
@@ -771,7 +771,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="container mx-auto px-5 sm:px-6 py-10">
+      <main className="container mx-auto xl:max-w-[1400px] px-5 sm:px-6 py-10">
 
         {/* ══════════════════════════════════════════════════════════════════
             VIEW: DASHBOARD
@@ -780,7 +780,7 @@ export default function Dashboard() {
           <>
             {/* ── IDLE / SINGLE-FILE MODE ─────────────────────────────── */}
             {!batchMode && (
-              <div className={`flex flex-col lg:flex-row w-full overflow-hidden transition-all duration-700 ${isIdle ? 'lg:items-center min-h-[60vh]' : 'items-start'}`}>
+              <div className={`flex flex-col lg:flex-row w-full transition-all duration-700 ${isIdle ? 'lg:items-center min-h-[60vh]' : 'items-start'}`}>
 
                 {/* SMOOTH CENTERING SPACER (Desktop only) */}
                 <div
@@ -791,10 +791,10 @@ export default function Dashboard() {
                 {renderUploadCard(!isIdle)}
 
                 {/* MAIN STAGE */}
-                <div className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1 w-full
+                <div className={`transition-all duration-700 ease-in-out flex flex-col gap-6 md:gap-8 flex-1
                   ${isIdle
                     ? 'max-h-0 lg:max-h-none lg:max-w-0 opacity-0 ml-0 pointer-events-none'
-                    : 'max-h-[5000px] lg:max-h-none lg:max-w-5xl opacity-100 lg:ml-8 pb-10'
+                    : 'max-h-[5000px] lg:max-h-none lg:max-w-4xl xl:max-w-5xl opacity-100 lg:ml-10 pb-10'
                   }
                 `}>
                   {singleJob && renderDetailPanel(singleJob)}
