@@ -89,7 +89,7 @@ def get_retriever_for_user(user_id: str):
     
     return qdrant.as_retriever(
         search_kwargs={
-            "k": 3,
+            "k": 5,
             "filter": filter_kwargs
         }
     )
@@ -129,10 +129,17 @@ def extractor_node(state: AgentState):
         "required_years_experience": 5,
         "required_education": "Master's | PhD | None",
         "visa_sponsorship": "No sponsorship | Sponsorship available | None",
-        "language_requirements": ["English C2", "None"]
+        "language_requirements": ["English C2", "None"],
+        "mandatory_tech_stack": ["Go", "Rust"],
+        "forbidden_tech_stack": ["Python", "Node.js"]
       }},
       "extracted_requirements": ["Requirement 1", "Requirement 2"]
     }}
+
+    IMPORTANT — Tech Stack Detection Rules:
+    - Set "mandatory_tech_stack" to a list of programming languages/frameworks the RFP strictly REQUIRES (e.g. "Must be written in Go", "Rust only"). If none, set to [].
+    - Set "forbidden_tech_stack" to a list of technologies the RFP explicitly REJECTS (e.g. "No Python", "We will not accept Node.js"). If none, set to [].
+    - Do NOT put general library preferences (e.g. "prefers React") in these fields — only MANDATORY or EXPLICITLY FORBIDDEN languages/runtimes.
     
     DOCUMENT TEXT:
     {state['rfp_text']}
@@ -162,6 +169,12 @@ def extractor_node(state: AgentState):
             print(f"   ✅ Successfully Extracted {len(requirements)} Requirements & Constraints:")
             print(f"      - Location: {hard_constraints.get('location_restriction')}")
             print(f"      - Experience: {hard_constraints.get('required_years_experience')} years")
+            mandatory_stack = hard_constraints.get('mandatory_tech_stack', [])
+            forbidden_stack = hard_constraints.get('forbidden_tech_stack', [])
+            if mandatory_stack:
+                print(f"      - ⚠️  Mandatory Tech Stack: {', '.join(mandatory_stack)}")
+            if forbidden_stack:
+                print(f"      - 🚫 Forbidden Tech Stack: {', '.join(forbidden_stack)}")
         else:
             print(f"   ⛔ Halting pipeline — document is not a valid RFP.")
 
@@ -223,9 +236,14 @@ def evaluator_node(state: AgentState):
     4. Education: If a specific degree (e.g. Master's/PhD) is strictly required, the user's `education` must meet it.
     5. Work Authorization/Visa: If visa sponsorship is explicitly denied, the user must have local authorization.
     6. Language proficiency: Native/C2 requirements must be met by user's listed languages.
+    7. Tech Stack (HARD DEALBREAKER — check this after the 6 above):
+       a. MANDATORY STACK: If `hard_constraints.mandatory_tech_stack` is a non-empty list, cross-reference each required language/framework against the User's CV Context. If the user does NOT have ANY of the mandatory languages (e.g., RFP requires Go or Rust but user only has Python/Node.js), you MUST output is_match: false.
+       b. FORBIDDEN STACK: If `hard_constraints.forbidden_tech_stack` is a non-empty list, check if the user's primary languages/frameworks are explicitly listed as forbidden. If so, you MUST output is_match: false.
+       c. CRITICAL: A high semantic match in related areas (e.g., RAG, AWS S3, vector databases) can NEVER compensate for a mandatory language mismatch. Do not give partial credit. This is a binary check.
+       d. SOFT PREFERENCES are NOT dealbreakers: If the RFP says "prefers Go" or "Python or Go accepted", this is NOT a mandatory tech stack — treat it as a normal technical requirement.
     
-    If ANY of the 6 hard constraints fail:
-    You MUST output {{"is_match": false, "reasoning": "Exact logistical mismatch reason"}}. 
+    If ANY of the above 7 rules fail:
+    You MUST output {{"is_match": false, "reasoning": "Exact mismatch reason"}}. 
     A perfect technical skill match CANNOT override a failed hard constraint. Do NOT mention technical skills in the rejection if a hard constraint failed.
     
     If all hard constraints pass:
@@ -292,6 +310,7 @@ def drafter_node(state: AgentState):
     4. TONE: Confident, direct, consultative, and concise. Speak like a senior engineer advising a client, not a junior begging for a job.
     5. THE CLOSE: Do not use "Sincerely" or "Thank you for considering." End with a brief Call to Action (CTA) or a technical question about their project to invite a reply (e.g., "Are you currently using [Tech] for this, or starting from scratch? Let's hop on a 5-minute call to discuss the architecture.")
     6. NO HALLUCINATIONS: You may ONLY claim skills, projects, and metrics explicitly found in the CV Context.
+    7. NO TECH STACK SUBSTITUTION: NEVER attempt to convince the client to use a different programming language or framework than what they required. If the client's specification mentions a required language (e.g., Go, Rust), do NOT propose using Python, Node.js, or any other language as an alternative. The Gatekeeper has already verified compatibility — you are drafting because the tech stack matches.
     
     [RFP REQUIREMENTS]:
     {state['requirements']}
