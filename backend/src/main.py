@@ -7,6 +7,9 @@ import io
 import json
 import asyncio
 from typing import List
+import boto3
+from datetime import datetime, timezone
+from boto3.dynamodb.conditions import Key
 
 # Import the pre-built, working LangGraph logic
 from src.agent_graph import build_graph
@@ -27,6 +30,29 @@ app.add_middleware(
 # Initialize LangGraph once at startup
 print("Initializing LangGraph Pipeline...")
 graph = build_graph()
+
+# --- DYNAMODB SETUP ---
+print("Connecting to DynamoDB...")
+dynamodb = boto3.resource('dynamodb', region_name='eu-north-1')
+history_table = dynamodb.Table('Quill_History')
+
+def save_to_history(user_id: str, filename: str, is_match: bool, reasoning: str, final_draft: str | None):
+    """Saves an evaluation result to DynamoDB."""
+    try:
+        status = "Drafted" if is_match and final_draft else "Rejected"
+        timestamp = datetime.now(timezone.utc).isoformat()
+        history_table.put_item(Item={
+            "user_id": user_id,
+            "timestamp": timestamp,
+            "filename": filename,
+            "status": status,
+            "is_match": is_match,
+            "gatekeeper_reasoning": reasoning or "",
+            "final_draft": final_draft or "",
+        })
+        print(f"[DynamoDB] Saved history for user {user_id}: {filename} ({status})")
+    except Exception as e:
+        print(f"[DynamoDB] Error saving history: {e}")
 
 def extract_text(file_bytes: bytes) -> str:
     """Helper to extract text from a raw PDF byte stream."""
@@ -80,19 +106,32 @@ async def evaluate_rfp(
     async def event_generator():
         # First event: Send the extracted RFP text so UI can show it
         yield json.dumps({"event": "init", "rfp_text": rfp_text}) + "\n"
-        
+
+        # Track final state for DB persistence
+        final_is_match = False
+        final_reasoning = ""
+        final_draft = ""
+
         try:
-            # langgraph.astream yields events as a dictionary: {node_name: state_updates}
             async for event in graph.astream(initial_state):
                 for node_name, updates in event.items():
-                    # We send the node name and the specific updates it made
                     payload = {
                         "event": "node_update",
                         "node": node_name,
                         "updates": updates
                     }
                     yield json.dumps(payload) + "\n"
-                    
+
+                    # Capture final values as we stream
+                    if node_name == "evaluator":
+                        final_is_match = updates.get("is_match", False)
+                        final_reasoning = updates.get("evaluator_reasoning", "")
+                    if node_name == "drafter":
+                        final_draft = updates.get("current_draft", "")
+
+            # Save to DynamoDB after streaming completes
+            save_to_history(user_id, file.filename, final_is_match, final_reasoning, final_draft)
+
             yield json.dumps({"event": "done"}) + "\n"
         except Exception as e:
             print(f"Streaming Error: {e}")
@@ -227,7 +266,24 @@ async def upload_cv(
         print(f"CV Upload Error: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# --- AWS LAMBDA ADAPTER ---
+# --- HISTORY ENDPOINT ---
+@app.get("/api/history/{user_id}")
+async def get_history(user_id: str):
+    """Fetches all evaluation history for a user from DynamoDB, newest first."""
+    print(f"\n--- HISTORY REQUEST for user: {user_id} ---")
+    try:
+        response = history_table.query(
+            KeyConditionExpression=Key('user_id').eq(user_id),
+            ScanIndexForward=False  # newest first
+        )
+        items = response.get('Items', [])
+        print(f"[DynamoDB] Found {len(items)} history items for user {user_id}")
+        return JSONResponse(content=items)
+    except Exception as e:
+        print(f"[DynamoDB] Error fetching history: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 # --- AWS LAMBDA HANDLER ---
 # This single line converts the FastAPI application into a form
 # that AWS API Gateway and Lambda understand natively via Mangum.
