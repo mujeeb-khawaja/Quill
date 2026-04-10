@@ -45,7 +45,7 @@ jobs:
           # Local folder to upload (relative to repo root)
           local-dir: ./client/apps/web/dist/
           # Remote directory on your cPanel server
-          server-dir: /quill.softcodex.co.uk/
+          server-dir: quill.softcodex.co.uk/
           # Dangerous clean: removes remote files not in local build.
           # Set to false if you have server-only files (e.g. .htaccess) you want to keep.
           dangerous-clean-slate: false
