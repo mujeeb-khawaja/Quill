@@ -1,0 +1,57 @@
+name: Build & Deploy to cPanel (FTP)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    name: Build Frontend & Upload via FTP
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout the repository ────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Node.js ─────────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      # ── 3. Install dependencies (from monorepo root: /client) ─────────────
+      - name: Install dependencies
+        working-directory: client
+        run: npm install
+
+      # ── 4. Build the Vite/React app via Turborepo ─────────────────────────
+      # Output will be at: client/apps/web/dist
+      - name: Build project
+        working-directory: client
+        run: npm run build
+
+      # ── 5. Deploy dist folder to cPanel via FTP ───────────────────────────
+      - name: Deploy via FTP to cPanel
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ftp.softcodex.co.uk
+          username: quill@quill.softcodex.co.uk
+          password: )RdavcWW&Pn?aJ$H
+          port: 21
+          # Local folder to upload (relative to repo root)
+          local-dir: ./client/apps/web/dist/
+          # Remote directory on your cPanel server
+          server-dir: /home/softcode/quill.softcodex.co.uk/
+          # Dangerous clean: removes remote files not in local build.
+          # Set to false if you have server-only files (e.g. .htaccess) you want to keep.
+          dangerous-clean-slate: false
+          # Exclude node_modules and source maps from upload
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/*.map
