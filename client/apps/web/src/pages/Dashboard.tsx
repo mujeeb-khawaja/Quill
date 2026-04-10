@@ -136,6 +136,8 @@ export default function Dashboard() {
   const [cvUploadSuccess, setCvUploadSuccess] = useState<string | null>(null);
   const [cvUploadError, setCvUploadError] = useState<string | null>(null);
   const cvInputRef = useRef<HTMLInputElement>(null);
+  const [cvDragging, setCvDragging] = useState(false);
+  const [rfpDragging, setRfpDragging] = useState(false);
 
   // --- SINGLE FILE STATE (for backwards-compat with stepper) ---
   const [singleJob, setSingleJob] = useState<BatchJob | null>(null);
@@ -164,10 +166,7 @@ export default function Dashboard() {
     setHistory(prev => [newItem, ...prev]);
   };
 
-  const handleCVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processCVFile = async (file: File) => {
     setCvUploading(true);
     setCvUploadSuccess(null);
     setCvUploadError(null);
@@ -196,6 +195,51 @@ export default function Dashboard() {
     } finally {
       setCvUploading(false);
       if (cvInputRef.current) cvInputRef.current.value = '';
+    }
+  };
+
+  const handleCVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processCVFile(file);
+  };
+
+  const handleCvDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!cvUploading) setCvDragging(true);
+  };
+
+  const handleCvDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setCvDragging(false);
+  };
+
+  const handleCvDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setCvDragging(false);
+    if (cvUploading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processCVFile(file);
+    }
+  };
+
+  const handleRfpDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (hasActiveCV) setRfpDragging(true);
+  };
+
+  const handleRfpDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setRfpDragging(false);
+  };
+
+  const handleRfpDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setRfpDragging(false);
+    if (!hasActiveCV) return;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setSelectedFiles(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -572,10 +616,16 @@ export default function Dashboard() {
         <CardContent className="space-y-6">
           <div
             onClick={() => hasActiveCV && triggerUpload()}
-            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${hasActiveCV
-              ? 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer'
-              : 'border-border/50 bg-muted/20 opacity-50 cursor-not-allowed pointer-events-none'
-              }`}
+            onDragOver={handleRfpDragOver}
+            onDragLeave={handleRfpDragLeave}
+            onDrop={handleRfpDrop}
+            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${
+              !hasActiveCV
+                ? 'border-border/50 bg-muted/20 opacity-50 cursor-not-allowed pointer-events-none'
+                : rfpDragging
+                  ? 'border-primary bg-primary/10 cursor-copy scale-[1.02]'
+                  : 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer'
+            }`}
           >
             {selectedFiles.length > 1
               ? <Files className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -584,7 +634,7 @@ export default function Dashboard() {
             <div className="text-center">
               <p className="text-xs md:text-sm font-bold text-foreground">
                 {selectedFiles.length === 0
-                  ? "Choose PDF File(s)"
+                  ? "Drag & Drop or Choose PDF File(s)"
                   : selectedFiles.length === 1
                     ? selectedFiles[0].name
                     : `${selectedFiles.length} files selected`}
@@ -696,10 +746,14 @@ export default function Dashboard() {
 
                     <div
                       onClick={() => !cvUploading && cvInputRef.current?.click()}
+                      onDragOver={handleCvDragOver}
+                      onDragLeave={handleCvDragLeave}
+                      onDrop={handleCvDrop}
                       className={`group border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center gap-4 transition-all relative
                         ${cvUploading ? 'border-primary/50 bg-muted/20 cursor-wait' : ''}
-                        ${cvUploadError ? 'border-destructive/50 bg-destructive/5 animate-pulse' : 'border-border hover:border-primary/50 hover:bg-muted/50'}
-                        ${!cvUploading && !cvUploadError ? 'cursor-pointer' : ''}
+                        ${!cvUploading && cvDragging ? 'border-primary bg-primary/10 cursor-copy scale-[1.02]' : ''}
+                        ${!cvUploading && !cvDragging && cvUploadError ? 'border-destructive/50 bg-destructive/5 animate-pulse' : ''}
+                        ${!cvUploading && !cvDragging && !cvUploadError ? 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer' : ''}
                       `}
                     >
                       {cvUploading ? (
