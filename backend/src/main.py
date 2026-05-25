@@ -1,43 +1,86 @@
-from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from mangum import Mangum
 import pdfplumber
 import io
 import json
 import asyncio
+import jwt
+import hashlib
+import os
+from decimal import Decimal
 from typing import List
 import boto3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from boto3.dynamodb.conditions import Key
 
-# Import the pre-built, working LangGraph logic
 from src.agent_graph import build_graph
 from src.cv_processor import extract_text_from_pdf_bytes, parse_cv_to_json, upsert_cv_to_qdrant, classify_cv_document
 
 app = FastAPI(title="AutoBid AI", description="Serverless RFP Evaluator")
 
-# --- CORS CONFIGURATION ---
-# In production, replace ["*"] with your actual frontend URL (e.g., Vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", "https://multi-agent-rfp-responder.onrender.com"], 
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize LangGraph once at startup
 print("Initializing LangGraph Pipeline...")
 graph = build_graph()
 
-# --- DYNAMODB SETUP ---
 print("Connecting to DynamoDB...")
 dynamodb = boto3.resource('dynamodb', region_name='eu-north-1')
 history_table = dynamodb.Table('Quill_History')
+analytics_table = dynamodb.Table('Quill_Analytics')
 
+# ── ADMIN AUTH ──────────────────────────────────────────────────────────────
+ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "quill-admin-secret-change-in-production")
+def _create_token(username: str) -> str:
+    payload = {
+        "sub": username,
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+    }
+    return jwt.encode(payload, ADMIN_JWT_SECRET, algorithm="HS256")
+
+
+def _validate_token(token: str) -> str:
+    try:
+        data = jwt.decode(token, ADMIN_JWT_SECRET, algorithms=["HS256"])
+        return data["sub"]
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def _to_json_safe(obj):
+    """Recursively convert DynamoDB Decimal types to native Python for JSON."""
+    if isinstance(obj, list):
+        return [_to_json_safe(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    return obj
+
+
+def _scan_history():
+    """Paginated full scan of Quill_History."""
+    items: list = []
+    resp = history_table.scan()
+    items.extend(resp.get('Items', []))
+    while 'LastEvaluatedKey' in resp:
+        resp = history_table.scan(ExclusiveStartKey=resp['LastEvaluatedKey'])
+        items.extend(resp.get('Items', []))
+    return items
+
+
+# ── CORE HELPERS ─────────────────────────────────────────────────────────────
 def save_to_history(user_id: str, filename: str, is_match: bool, reasoning: str, final_draft: str | None):
-    """Saves an evaluation result to DynamoDB."""
     try:
         status = "Drafted" if is_match and final_draft else "Rejected"
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -54,16 +97,109 @@ def save_to_history(user_id: str, filename: str, is_match: bool, reasoning: str,
     except Exception as e:
         print(f"[DynamoDB] Error saving history: {e}")
 
+
 def extract_text(file_bytes: bytes) -> str:
-    """Helper to extract text from a raw PDF byte stream."""
     return extract_text_from_pdf_bytes(file_bytes)
 
-from fastapi.responses import StreamingResponse
 
-# --- CONCURRENCY LIMITER ---
-# Caps parallel LLM pipeline calls to 3 to prevent rate-limit (HTTP 429) errors
-# on free-tier APIs (Groq, Gemini). Raise to 4-5 if on a paid tier.
 BATCH_SEMAPHORE = asyncio.Semaphore(3)
+
+# ── ADMIN ENDPOINTS ───────────────────────────────────────────────────────────
+
+@app.post("/api/admin/login")
+async def admin_login(username: str = Form(...), password: str = Form(...)):
+    try:
+        resp = history_table.get_item(
+            Key={"user_id": f"ADMIN#{username}", "timestamp": "CREDENTIAL"}
+        )
+        item = resp.get("Item")
+        if not item:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        pw_hash = hashlib.sha256(password.encode()).hexdigest()
+        if item.get("password_hash") != pw_hash:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        return {"token": _create_token(username), "username": username}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/stats")
+async def admin_stats(token: str = Form(...)):
+    _validate_token(token)
+    all_items = _scan_history()
+    evals = [
+        item for item in all_items
+        if not item.get('user_id', '').startswith('ADMIN#')
+        and item.get('timestamp') != 'CREDENTIAL'
+    ]
+
+    total = len(evals)
+    unique_users = len(set(item['user_id'] for item in evals)) if evals else 0
+    drafted = sum(1 for item in evals if item.get('status') == 'Drafted')
+    rejected = total - drafted
+    success_rate = round(drafted / total * 100, 1) if total > 0 else 0
+
+    today_str = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    today_count = sum(1 for item in evals if item.get('timestamp', '').startswith(today_str))
+
+    daily: dict = {}
+    for item in evals:
+        date = item.get('timestamp', '')[:10]
+        if date:
+            daily[date] = daily.get(date, 0) + 1
+
+    total_visits = unique_users
+    try:
+        visit_resp = analytics_table.query(
+            KeyConditionExpression=Key('event_type').eq('VISIT')
+        )
+        total_visits = len(visit_resp.get('Items', []))
+    except Exception:
+        pass
+
+    return {
+        "total_evaluations": total,
+        "unique_users": unique_users,
+        "total_visits": total_visits,
+        "drafted": drafted,
+        "rejected": rejected,
+        "success_rate": success_rate,
+        "today_evaluations": today_count,
+        "daily_breakdown": daily,
+    }
+
+
+@app.post("/api/admin/logs")
+async def admin_logs(token: str = Form(...), limit: int = Form(100)):
+    _validate_token(token)
+    all_items = _scan_history()
+    evals = [
+        item for item in all_items
+        if not item.get('user_id', '').startswith('ADMIN#')
+        and item.get('timestamp') != 'CREDENTIAL'
+    ]
+    evals.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return JSONResponse(content=_to_json_safe(evals[:limit]))
+
+
+@app.post("/api/track-visit")
+async def track_visit(user_id: str = Form(...)):
+    try:
+        ts = datetime.now(timezone.utc).isoformat()
+        analytics_table.put_item(Item={
+            "event_type": "VISIT",
+            "sk": f"{ts}#{user_id}",
+            "user_id": user_id,
+            "date": ts[:10],
+        })
+    except Exception as e:
+        print(f"[Analytics] Visit tracking error: {e}")
+    return {"status": "ok"}
+
+
+# ── RFP EVALUATION ───────────────────────────────────────────────────────────
 
 @app.post("/api/evaluate-rfp")
 async def evaluate_rfp(
@@ -72,13 +208,10 @@ async def evaluate_rfp(
 ):
     print(f"\n--- API REQUEST RECEIVED (STREAMING) ---")
     print(f"File Name: {file.filename}")
-    
-    # 1. Read file bytes
+
     file_bytes = await file.read()
-    
-    # 2. Extract Text
     rfp_text = extract_text(file_bytes)
-    
+
     if len(rfp_text.strip()) < 10:
         return {
             "status": "error",
@@ -87,7 +220,6 @@ async def evaluate_rfp(
             "final_draft": None
         }
 
-    # 3. Setup Initial State for LangGraph
     initial_state = {
         "rfp_text": rfp_text,
         "user_id": user_id,
@@ -102,12 +234,10 @@ async def evaluate_rfp(
         "review_feedback": "",
         "revision_count": 0
     }
-    
+
     async def event_generator():
-        # First event: Send the extracted RFP text so UI can show it
         yield json.dumps({"event": "init", "rfp_text": rfp_text}) + "\n"
 
-        # Track final state for DB persistence
         final_is_match = False
         final_reasoning = ""
         final_draft = ""
@@ -122,16 +252,13 @@ async def evaluate_rfp(
                     }
                     yield json.dumps(payload) + "\n"
 
-                    # Capture final values as we stream
                     if node_name == "evaluator":
                         final_is_match = updates.get("is_match", False)
                         final_reasoning = updates.get("evaluator_reasoning", "")
                     if node_name == "drafter":
                         final_draft = updates.get("current_draft", "")
 
-            # Save to DynamoDB after streaming completes
             save_to_history(user_id, file.filename, final_is_match, final_reasoning, final_draft)
-
             yield json.dumps({"event": "done"}) + "\n"
         except Exception as e:
             print(f"Streaming Error: {e}")
@@ -140,10 +267,9 @@ async def evaluate_rfp(
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 
-# --- BATCH ENDPOINT ---
+# ── BATCH ─────────────────────────────────────────────────────────────────────
+
 async def _process_single_file(file: UploadFile, user_id: str) -> dict:
-    """Processes one file through the full LangGraph pipeline (async, non-streaming).
-    The BATCH_SEMAPHORE ensures at most 3 of these run concurrently."""
     async with BATCH_SEMAPHORE:
         filename = file.filename
         print(f"\n[BATCH] Starting: {filename}")
@@ -152,7 +278,6 @@ async def _process_single_file(file: UploadFile, user_id: str) -> dict:
         rfp_text = extract_text(file_bytes)
 
         if len(rfp_text.strip()) < 10:
-            print(f"[BATCH] Skipping {filename}: not enough text.")
             return {
                 "filename": filename,
                 "is_match": False,
@@ -205,59 +330,49 @@ async def evaluate_rfp_batch(
     files: List[UploadFile] = File(...),
     user_id: str = Form(...)
 ):
-    """Accepts multiple PDF files and processes them in parallel (max 3 at once).
-    Returns a JSON array of results once all jobs are complete."""
     print(f"\n--- BATCH REQUEST RECEIVED: {len(files)} file(s) for user {user_id} ---")
-    for f in files:
-        print(f"  - {f.filename}")
-
-    # asyncio.gather fires all tasks concurrently; BATCH_SEMAPHORE caps actual LLM calls to 3
     results = await asyncio.gather(*[_process_single_file(f, user_id) for f in files])
-
     print(f"\n[BATCH] All {len(files)} job(s) complete.")
     return JSONResponse(content=list(results))
 
 
-# --- CV INGESTION ENDPOINT ---
+# ── CV INGESTION ──────────────────────────────────────────────────────────────
+
 @app.post("/api/upload-cv")
 async def upload_cv(
     file: UploadFile = File(...),
     user_id: str = Form(...)
 ):
-    """Parses a raw PDF resume via LLM, segments it, and pushes vectors to Qdrant."""
     print(f"\n--- CV UPLOAD REQUEST RECEIVED ---")
     print(f"File Name: {file.filename} | User: {user_id}")
-    
+
     file_bytes = await file.read()
     raw_text = extract_text(file_bytes)
-    
+
     if len(raw_text.strip()) < 50:
         return JSONResponse(status_code=400, content={"error": "PDF is empty or unreadable."})
-        
+
     try:
-        # 1. Pre-flight classification (Fail Fast)
         classification = classify_cv_document(raw_text)
         if not classification.get("is_valid_resume") or classification.get("confidence_score", 0) < 80:
             doc_type = classification.get("document_type", "Unknown")
             return JSONResponse(
-                status_code=400, 
+                status_code=400,
                 content={
                     "status": "error",
-                    "error": "Invalid Document", 
+                    "error": "Invalid Document",
                     "message": f"This appears to be a {doc_type}. Please upload a valid Resume or CV."
                 }
             )
 
-        # 2. LLM parsing (Semantic Chunking - Expensive)
         chunks = parse_cv_to_json(raw_text)
         if not chunks:
             return JSONResponse(status_code=500, content={"error": "LLM failed to generate semantic chunks."})
-            
-        # Qdrant multi-tenant upsert
+
         upsert_count = upsert_cv_to_qdrant(chunks, user_id)
-        
+
         return {
-            "status": "success", 
+            "status": "success",
             "message": f"Successfully parsed and vectorized {upsert_count} chunks.",
             "chunks_upserted": upsert_count,
             "user_id": user_id
@@ -266,25 +381,24 @@ async def upload_cv(
         print(f"CV Upload Error: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# --- HISTORY ENDPOINT ---
+
+# ── HISTORY ───────────────────────────────────────────────────────────────────
+
 @app.get("/api/history/{user_id}")
 async def get_history(user_id: str):
-    """Fetches all evaluation history for a user from DynamoDB, newest first."""
     print(f"\n--- HISTORY REQUEST for user: {user_id} ---")
     try:
         response = history_table.query(
             KeyConditionExpression=Key('user_id').eq(user_id),
-            ScanIndexForward=False  # newest first
+            ScanIndexForward=False
         )
         items = response.get('Items', [])
         print(f"[DynamoDB] Found {len(items)} history items for user {user_id}")
-        return JSONResponse(content=items)
+        return JSONResponse(content=_to_json_safe(items))
     except Exception as e:
         print(f"[DynamoDB] Error fetching history: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-# --- AWS LAMBDA HANDLER ---
-# This single line converts the FastAPI application into a form
-# that AWS API Gateway and Lambda understand natively via Mangum.
+# ── LAMBDA HANDLER ────────────────────────────────────────────────────────────
 handler = Mangum(app)

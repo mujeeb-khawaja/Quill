@@ -14,7 +14,7 @@ RUN pip install --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir fastapi mangum uvicorn python-multipart
 
 # STAGE 2: Data (Confirmed Working)
-RUN pip install --no-cache-dir pydantic pydantic-settings aiohttp requests
+RUN pip install --no-cache-dir pydantic pydantic-settings aiohttp requests PyJWT
 
 # STAGE 3: AI Logic (THE CULPRIT - Forcing Binary Only)
 # This prevents the linker crash by forbidding source compilation

@@ -619,13 +619,12 @@ export default function Dashboard() {
             onDragOver={handleRfpDragOver}
             onDragLeave={handleRfpDragLeave}
             onDrop={handleRfpDrop}
-            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${
-              !hasActiveCV
+            className={`group border-2 border-dashed rounded-xl md:rounded-2xl p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all relative ${!hasActiveCV
                 ? 'border-border/50 bg-muted/20 opacity-50 cursor-not-allowed pointer-events-none'
                 : rfpDragging
                   ? 'border-primary bg-primary/10 cursor-copy scale-[1.02]'
                   : 'border-border hover:border-primary/50 hover:bg-muted/50 cursor-pointer'
-            }`}
+              }`}
           >
             {selectedFiles.length > 1
               ? <Files className="h-10 w-10 md:h-12 md:w-12 text-muted-foreground group-hover:text-primary transition-colors" />
